@@ -37,7 +37,7 @@ export function MenuList({ items, commands, onDone }: { items: MenuItem[]; comma
 }
 
 /** Первая строка: знак, стандартные меню, заголовок, кнопки окна. Пустые места — перетаскивание. */
-export function TitleBar({ menus, commands }: { menus: MenuSpec[]; commands: Map<string, Command> }) {
+export function TitleBar({ menus, commands, subtitle }: { menus: MenuSpec[]; commands: Map<string, Command>; subtitle?: string }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState<string | null>(null);
   const win = getCurrentWindow();
@@ -74,7 +74,7 @@ export function TitleBar({ menus, commands }: { menus: MenuSpec[]; commands: Map
         ))}
       </div>
       <div className="drag" data-tauri-drag-region />
-      <span className="wtitle">{t("app.title")}</span>
+      <span className="wtitle">{subtitle ? `${t("app.title")} — ${subtitle}` : t("app.title")}</span>
       <div className="wctl">
         <button aria-label="minimize" onClick={() => void win.minimize()}>
           <Minus size={14} strokeWidth={1.75} />

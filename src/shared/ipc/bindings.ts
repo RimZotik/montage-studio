@@ -13,7 +13,6 @@ export const commands = {
 	systemCheck: () => typedError<SystemReport, AppError>(__TAURI_INVOKE("system_check")),
 	projectsRecent: () => typedError<ProjectSummary[], AppError>(__TAURI_INVOKE("projects_recent")),
 	projectCreate: (input: NewProject) => typedError<ProjectSummary, AppError>(__TAURI_INVOKE("project_create", { input })),
-	projectOpen: (path: string) => typedError<ProjectSummary, AppError>(__TAURI_INVOKE("project_open", { path })),
 	projectForget: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("project_forget", { path })),
 	claudeLimitsLast: () => typedError<{
 	/**  Когда получены, Unix (секунды). */
@@ -32,11 +31,31 @@ export const commands = {
 	updateCheckNow: () => __TAURI_INVOKE<void>("update_check_now"),
 	/**  Поставить скачанное обновление: тихая установка, приложение перезапустится новым. */
 	updateInstall: () => typedError<null, AppError>(__TAURI_INVOKE("update_install")),
+	projectLoad: (path: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_load", { path })),
+	projectClose: () => __TAURI_INVOKE<void>("project_close"),
+	projectCurrent: () => __TAURI_INVOKE<{
+	path: string,
+	project: ProjectFile,
+	tracks: number,
+	clips: number,
+	canUndo: boolean,
+	canRedo: boolean,
+	/**  Что отменит «Отменить» / вернет «Повторить». */
+	undoLabel: string | null,
+	redoLabel: string | null,
+} | null>("project_current"),
+	/**  Настройки последовательности (с отменой). */
+	projectSetSequence: (sequence: Sequence) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_set_sequence", { sequence })),
+	/**  Переименовать проект (имя в `project.json`; папка остается). */
+	projectRename: (name: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_rename", { name })),
+	projectUndo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo")),
+	projectRedo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_redo")),
 };
 
 /** Events */
 export const events = {
 	componentProgress: makeEvent<ComponentProgress>("component-progress"),
+	projectChanged: makeEvent<ProjectChanged>("project-changed"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
 
@@ -92,6 +111,17 @@ export type Phase = "download" | "verify" | "extract" | "done" | "error" | "canc
 
 export type Preset = "vertical" | "horizontal" | "square";
 
+export type ProjectChanged = ProjectView | null;
+
+export type ProjectFile = {
+	version: number,
+	name: string,
+	series?: string | null,
+	sequence: Sequence,
+	/**  Включенные правила библиотеки (имена файлов). */
+	libraryRules?: string[],
+};
+
 export type ProjectSummary = {
 	path: string,
 	name: string,
@@ -103,6 +133,28 @@ export type ProjectSummary = {
 	openedAt: number,
 	/**  Папка на месте (иначе — переместили или удалили). */
 	exists: boolean,
+};
+
+/**  Что видит интерфейс об открытом проекте. */
+export type ProjectView = {
+	path: string,
+	project: ProjectFile,
+	tracks: number,
+	clips: number,
+	canUndo: boolean,
+	canRedo: boolean,
+	/**  Что отменит «Отменить» / вернет «Повторить». */
+	undoLabel: string | null,
+	redoLabel: string | null,
+};
+
+export type Sequence = {
+	width: number,
+	height: number,
+	fps: number,
+	/**  0 — по содержимому. */
+	durationFrames?: number,
+	background?: string,
 };
 
 export type Settings = {

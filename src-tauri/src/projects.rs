@@ -5,14 +5,12 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use specta::Type;
 use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-
-pub const PROJECT_VERSION: u32 = 1;
+use crate::project::model::{PROJECT_VERSION, ProjectFile, Sequence, TIMELINE_VERSION, TimelineFile};
 const MEDIA_DIRS: [&str; 5] = ["footage", "voice", "music", "sfx", "images"];
 const RULES: [&str; 4] = ["brief", "rules", "style", "script"];
 
@@ -98,33 +96,22 @@ pub fn create_on_disk(input: &NewProject) -> AppResult<(PathBuf, (u32, u32))> {
     for rule in RULES {
         write(&dir.join("rules").join(format!("{rule}.md")), "")?;
     }
-    let project = json!({
-        "version": PROJECT_VERSION,
-        "name": name,
-        "series": null,
-        "sequence": { "width": width, "height": height, "fps": input.fps, "durationFrames": 0, "background": "#000000" },
-        "libraryRules": [],
-    });
-    let timeline = json!({ "version": 1, "tracks": [], "clips": [], "markers": [] });
+    let project = ProjectFile {
+        version: PROJECT_VERSION,
+        name: name.to_owned(),
+        series: None,
+        sequence: Sequence { width, height, fps: input.fps, duration_frames: 0, background: "#000000".into() },
+        library_rules: vec![],
+    };
+    let timeline = TimelineFile { version: TIMELINE_VERSION, ..TimelineFile::default() };
     write(&dir.join("project.json"), &serde_json::to_string_pretty(&project).unwrap_or_default())?;
     write(&dir.join("timeline.json"), &serde_json::to_string_pretty(&timeline).unwrap_or_default())?;
     write(&dir.join(".gitignore"), ".studio/cache/\n.studio/build/\noutput/\n")?;
     Ok((dir, (width, height)))
 }
 
-/// Прочитать `project.json` папки: имя и последовательность.
-pub fn read_on_disk(dir: &Path) -> AppResult<(String, u32, u32, u32)> {
-    let raw = std::fs::read(dir.join("project.json")).map_err(|_| AppError::new("notProject", dir.display().to_string()))?;
-    let v: serde_json::Value = serde_json::from_slice(&raw).map_err(|e| AppError::new("badProject", e.to_string()))?;
-    let seq = &v["sequence"];
-    let num = |k: &str| seq[k].as_u64().and_then(|n| u32::try_from(n).ok());
-    match (v["name"].as_str(), num("width"), num("height"), num("fps")) {
-        (Some(name), Some(w), Some(h), Some(fps)) => Ok((name.to_owned(), w, h, fps)),
-        _ => Err(AppError::new("badProject", "project.json lacks name or sequence")),
-    }
-}
-
-fn remember(db: &Db, path: &str, name: &str, (w, h, fps): (u32, u32, u32)) -> AppResult<ProjectSummary> {
+/// Запомнить проект в недавних (открыт сейчас).
+pub fn remember(db: &Db, path: &str, name: &str, (w, h, fps): (u32, u32, u32)) -> AppResult<ProjectSummary> {
     let t = now();
     db.with(|c| {
         c.execute(
@@ -164,14 +151,6 @@ pub fn project_create(db: State<'_, Db>, input: NewProject) -> AppResult<Project
 
 #[tauri::command]
 #[specta::specta]
-pub fn project_open(db: State<'_, Db>, path: String) -> AppResult<ProjectSummary> {
-    let (name, w, h, fps) = read_on_disk(Path::new(&path))?;
-    log::info!("project opened: {path}");
-    remember(&db, &path, &name, (w, h, fps))
-}
-
-#[tauri::command]
-#[specta::specta]
 pub fn project_forget(db: State<'_, Db>, path: String) -> AppResult<()> {
     db.with(|c| Ok(c.execute("delete from projects where path = ?1", [&path]).map(|_| ())?))
 }
@@ -189,7 +168,8 @@ mod tests {
         assert_eq!(size, (1080, 1920));
         assert!(dir.ends_with("Промо_ октябрь_"));
         assert!(dir.join("media/voice").is_dir() && dir.join("rules/brief.md").is_file());
-        assert_eq!(read_on_disk(&dir).unwrap(), ("Промо: октябрь?".into(), 1080, 1920, 60));
+        let loaded = crate::project::load(&dir).unwrap();
+        assert_eq!((loaded.project.name.as_str(), loaded.project.sequence.height), ("Промо: октябрь?", 1920));
         remember(&db, &dir.display().to_string(), "Промо: октябрь?", (1080, 1920, 60)).unwrap();
         let list = recent(&db).unwrap();
         assert_eq!(list.len(), 1);
@@ -201,6 +181,6 @@ mod tests {
     fn rejects_bad_input() {
         let input = NewProject { name: "  ".into(), parent: ".".into(), preset: Preset::Square, fps: 30 };
         assert_eq!(create_on_disk(&input).unwrap_err().code, "invalidName");
-        assert_eq!(read_on_disk(Path::new("definitely-missing")).unwrap_err().code, "notProject");
+        assert_eq!(crate::project::load(Path::new("definitely-missing")).unwrap_err().code, "notProject");
     }
 }

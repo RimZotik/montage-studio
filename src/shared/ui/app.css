@@ -174,3 +174,43 @@ input { font: inherit; color: inherit; }
 .inst { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
 .inst .v { margin-left: 0; }
 .ierr { font-size: 11px; color: var(--danger); margin: -2px 0 4px 22px; line-height: 1.35; }
+
+/* Вторая строка: инструменты страницы */
+.pb-tools { display: flex; align-items: center; gap: 2px; padding-left: 12px; margin-left: 4px; border-left: 1px solid var(--line); height: 20px; }
+.iconbtn:disabled { color: var(--faint); cursor: default; background: none; }
+
+/* Подготовка */
+.prepare { flex: 1; min-height: 0; display: flex; }
+.prepare .col { display: flex; flex-direction: column; min-width: 0; padding: 16px 20px; overflow: auto; }
+.prepare .col + .col { border-left: 1px solid var(--line); }
+.prepare .media { width: 300px; flex: none; }
+.prepare .rules { flex: 1; }
+.prepare .seq { width: 340px; flex: none; }
+.colhead { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
+.colhead.sub { margin-top: 26px; }
+.placeholder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--faint); text-align: center; line-height: 1.5; padding: 0 24px; }
+.pathline { font: 11px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.presets.compact .preset { height: 34px; gap: 8px; font-size: 12px; padding: 0 10px; }
+.pair { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.numf { display: flex; align-items: center; gap: 4px; flex: 1; }
+.numf input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: 13px var(--mono); }
+.numf span { font-size: 11px; color: var(--faint); }
+.numf:focus-within, .colorf:focus-within { border-color: var(--accent); }
+.colorf { display: flex; align-items: center; gap: 8px; }
+.colorf input[type="color"] { width: 18px; height: 18px; border: 0; padding: 0; background: none; cursor: pointer; }
+.hint { font-size: 11px; color: var(--faint); margin-top: 16px; }
+
+/* Проекты */
+.plist { flex: 1; min-height: 0; overflow: auto; padding: 8px 16px; }
+.plist table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.plist th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+.plist td { padding: 7px 8px; border-bottom: 1px solid #f3efea; white-space: nowrap; }
+.plist tr:hover td { background: var(--hover); }
+.plist tr.gone td { color: var(--faint); }
+.plist .nm { font-weight: 500; font-size: 13px; }
+.plist .path { color: var(--muted); font: 11px var(--mono); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.plist .acts { text-align: right; width: 64px; }
+.plist .empty { padding: 30px 8px; }
+.presets.compact { flex-direction: column; gap: 4px; }
+.presets.compact .preset { flex: none; height: 30px; }
+.pair .field { width: auto; min-width: 0; }

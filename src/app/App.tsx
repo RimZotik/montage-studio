@@ -2,20 +2,28 @@ import { appLogDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderOpen, Gauge, Languages, LogOut, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderClosed, FolderOpen, Gauge, Languages, LogOut, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NewProjectDialog } from "@/pages/Home/NewProjectDialog";
 import { Home } from "@/pages/Home/Home";
+import { Prepare } from "@/pages/Project/Prepare";
+import { Projects } from "@/pages/Projects/Projects";
 import { pickLanguage } from "@/shared/i18n";
-import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
+import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type ProjectView, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
 import { LimitsIndicator } from "./Limits";
 import { Palette } from "./Palette";
 import { type MenuSpec, TitleBar } from "./TitleBar";
 
-type Tab = "home" | "projects" | "library";
+type HomeTab = "home" | "projects" | "library";
+type ProjectTab = "prepare" | "edit" | "export";
+type Tab = HomeTab | ProjectTab;
+const HOME_TABS: HomeTab[] = ["home", "projects", "library"];
+const PROJECT_TABS: ProjectTab[] = ["prepare", "edit", "export"];
+/** Лимиты старше этого обновляются при запуске сами (один короткий запрос). */
+const LIMITS_STALE_S = 15 * 60;
 type Toast = { id: number; text: string; error?: boolean };
 
 export function App() {
@@ -32,6 +40,9 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [installs, setInstalls] = useState<Partial<Record<ComponentId, ComponentProgress>>>({});
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
+  const [project, setProject] = useState<ProjectView | null>(null);
+  const [limitsLoaded, setLimitsLoaded] = useState(false);
+  const [autoLimits, setAutoLimits] = useState(false);
 
   const toast = useCallback((text: string, error = false) => {
     const id = Date.now() + Math.random();
@@ -53,13 +64,17 @@ export function App() {
     if (r.status === "ok") setProjects(r.data);
   }, []);
 
-  const refreshLimits = useCallback(async () => {
-    setLimitsBusy(true);
-    const r = await ipc.claudeLimitsRefresh();
-    setLimitsBusy(false);
-    if (r.status === "ok") setLimits(r.data);
-    else fail(r.error);
-  }, [fail]);
+  /** `silent` — без сообщения об ошибке (автообновление при запуске). */
+  const refreshLimits = useCallback(
+    async (silent = false) => {
+      setLimitsBusy(true);
+      const r = await ipc.claudeLimitsRefresh();
+      setLimitsBusy(false);
+      if (r.status === "ok") setLimits(r.data);
+      else if (!silent) fail(r.error);
+    },
+    [fail],
+  );
 
   const saveSettings = useCallback(async (next: Settings) => {
     const r = await ipc.settingsUpdate(next);
@@ -73,11 +88,26 @@ export function App() {
       await i18n.changeLanguage(pickLanguage(s.language ?? ""));
       const l = await ipc.claudeLimitsLast();
       if (l.status === "ok") setLimits(l.data);
+      setLimitsLoaded(true);
     })();
     void loadProjects();
     void check();
     void ipc.updateStatus().then(setUpdate);
   }, [check, loadProjects, i18n]);
+
+  // При запуске: Claude Code найден, а лимиты устарели или их нет — обновить один раз.
+  const claudeFound = !!report?.tools.find((x) => x.id === "claude" && x.found && !x.error);
+  useEffect(() => {
+    if (autoLimits || !limitsLoaded || !claudeFound) return;
+    setAutoLimits(true);
+    if (!limits || Date.now() / 1000 - limits.at > LIMITS_STALE_S) void refreshLimits(true);
+  }, [autoLimits, limitsLoaded, claudeFound, limits, refreshLimits]);
+
+  // Открытый проект меняет только ядро — сюда приходит его новое состояние.
+  useEffect(() => {
+    const off = events.projectChanged.listen(({ payload }) => setProject(payload));
+    return () => void off.then((f) => f());
+  }, []);
 
   // Ход установки компонентов; конец — перепроверка системы.
   useEffect(() => {
@@ -103,14 +133,24 @@ export function App() {
 
   const openProject = useCallback(
     async (path: string) => {
-      const r = await ipc.projectOpen(path);
+      const r = await ipc.projectLoad(path);
       if (r.status === "ok") {
-        toast(t("home.opened", { name: r.data.name }));
+        setProject(r.data);
+        setTab("prepare");
         void loadProjects();
       } else fail(r.error);
     },
-    [fail, loadProjects, t, toast],
+    [fail, loadProjects],
   );
+
+  const closeProject = useCallback(async () => {
+    await ipc.projectClose();
+    setProject(null);
+    setTab("home");
+  }, []);
+
+  /** Итог правки проекта: ошибка — сообщение (новое состояние придет событием). */
+  const edited = useCallback((r: { status: "ok" } | { status: "error"; error: AppError }) => r.status === "error" && fail(r.error), [fail]);
 
   const openFolder = useCallback(async () => {
     const dir = await openDialog({ directory: true });
@@ -127,12 +167,16 @@ export function App() {
     () => [
       { id: "newProject", label: "cmd.newProject", icon: Plus, keys: "Ctrl+N", run: () => setDialog("new") },
       { id: "openProject", label: "cmd.openProject", icon: FolderOpen, keys: "Ctrl+O", run: () => void openFolder() },
-      { id: "undo", label: "cmd.undo", icon: Undo2, keys: "Ctrl+Z", enabled: () => false, run: () => {} },
-      { id: "redo", label: "cmd.redo", icon: Redo2, keys: "Ctrl+Shift+Z", enabled: () => false, run: () => {} },
+      { id: "closeProject", label: "cmd.closeProject", icon: FolderClosed, keys: "Ctrl+W", enabled: () => !!project, run: () => void closeProject() },
+      { id: "undo", label: "cmd.undo", icon: Undo2, keys: "Ctrl+Z", enabled: () => !!project?.canUndo, run: () => void ipc.projectUndo().then(edited) },
+      { id: "redo", label: "cmd.redo", icon: Redo2, keys: "Ctrl+Shift+Z", enabled: () => !!project?.canRedo, run: () => void ipc.projectRedo().then(edited) },
       { id: "palette", label: "cmd.palette", icon: CommandIcon, keys: "Ctrl+Shift+P", run: () => setDialog("palette") },
-      { id: "home", label: "cmd.home", keys: "Alt+1", run: () => setTab("home") },
-      { id: "projects", label: "cmd.projects", keys: "Alt+2", run: () => setTab("projects") },
-      { id: "library", label: "cmd.library", keys: "Alt+3", run: () => setTab("library") },
+      ...[0, 1, 2].map((i) => ({
+        id: `tab${i + 1}`,
+        label: `tabs.${(project ? PROJECT_TABS : HOME_TABS)[i]}`,
+        keys: `Alt+${i + 1}`,
+        run: () => setTab((project ? PROJECT_TABS : HOME_TABS)[i] ?? "home"),
+      })),
       { id: "language", label: "cmd.language", icon: Languages, run: () => void toggleLanguage() },
       { id: "reload", label: "cmd.reload", icon: RotateCw, keys: "Ctrl+R", run: () => window.location.reload() },
       { id: "refreshChecks", label: "cmd.refreshChecks", icon: RefreshCw, keys: "F5", run: () => void check() },
@@ -142,14 +186,14 @@ export function App() {
       { id: "installUpdate", label: "cmd.installUpdate", icon: Download, enabled: () => update?.phase === "ready", run: () => void ipc.updateInstall().then((r) => r.status === "error" && fail(r.error)) },
       { id: "quit", label: "cmd.quit", icon: LogOut, keys: "Alt+F4", run: () => void getCurrentWindow().close() },
     ],
-    [check, fail, openFolder, refreshLimits, toggleLanguage, update?.phase],
+    [check, closeProject, edited, fail, openFolder, project, refreshLimits, toggleLanguage, update?.phase],
   );
   const byId = useMemo(() => new Map(commandList.map((c) => [c.id, c])), [commandList]);
 
   const menus: MenuSpec[] = [
-    { id: "file", label: "menu.file", items: ["newProject", "openProject", "-", "quit"] },
+    { id: "file", label: "menu.file", items: ["newProject", "openProject", "closeProject", "-", "quit"] },
     { id: "edit", label: "menu.edit", items: ["undo", "redo", "-", "palette"] },
-    { id: "view", label: "menu.view", items: ["home", "projects", "library", "-", "language", "reload"] },
+    { id: "view", label: "menu.view", items: ["tab1", "tab2", "tab3", "-", "language", "reload"] },
     { id: "window", label: "menu.window", items: ["refreshChecks", "refreshLimits"] },
     { id: "help", label: "menu.help", items: ["checkUpdates", "installUpdate", "-", "openLogs"] },
   ];
@@ -179,21 +223,33 @@ export function App() {
 
   return (
     <div className="app">
-      <TitleBar menus={menus} commands={byId} />
+      <TitleBar menus={menus} commands={byId} subtitle={project?.project.name} />
 
       <div className="pagebar">
         <div className="tabs">
-          {(["home", "projects", "library"] as const).map((k) => (
+          {(project ? PROJECT_TABS : HOME_TABS).map((k) => (
             <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
               {t(`tabs.${k}`)}
             </button>
           ))}
         </div>
+        {project && (
+          <div className="pb-tools">
+            <button className="iconbtn" title={`${t("cmd.undo")} (Ctrl+Z)`} disabled={!project.canUndo} onClick={() => byId.get("undo")?.run()}>
+              <Undo2 size={15} strokeWidth={1.75} />
+            </button>
+            <button className="iconbtn" title={`${t("cmd.redo")} (Ctrl+Shift+Z)`} disabled={!project.canRedo} onClick={() => byId.get("redo")?.run()}>
+              <Redo2 size={15} strokeWidth={1.75} />
+            </button>
+          </div>
+        )}
         <div className="pb-right">
-          <label className="search">
-            <Search size={14} strokeWidth={1.75} />
-            <input placeholder={t("search.projects")} value={query} onChange={(e) => setQuery(e.target.value)} />
-          </label>
+          {!project && (
+            <label className="search">
+              <Search size={14} strokeWidth={1.75} />
+              <input placeholder={t("search.projects")} value={query} onChange={(e) => setQuery(e.target.value)} />
+            </label>
+          )}
           {update?.phase === "ready" && update.version && (
             <button className="btn" title={update.notes ?? undefined} onClick={() => byId.get("installUpdate")?.run()}>
               <Download size={14} strokeWidth={1.75} />
@@ -201,14 +257,22 @@ export function App() {
             </button>
           )}
           <LimitsIndicator limits={limits} refreshing={limitsBusy} onRefresh={() => void refreshLimits()} />
-          <button className="btn pri" onClick={() => setDialog("new")}>
-            <Plus size={14} strokeWidth={2} />
-            {t("home.newProject")}
-          </button>
+          {!project && (
+            <button className="btn pri" onClick={() => setDialog("new")}>
+              <Plus size={14} strokeWidth={2} />
+              {t("home.newProject")}
+            </button>
+          )}
         </div>
       </div>
 
-      {tab === "home" ? (
+      {project && tab === "prepare" ? (
+        <Prepare view={project} onSequence={(sequence) => void ipc.projectSetSequence(sequence).then(edited)} onRename={(name) => void ipc.projectRename(name).then(edited)} />
+      ) : project ? (
+        <div className="soon">{t(`soon.${tab}`)}</div>
+      ) : tab === "projects" ? (
+        <Projects projects={projects} query={query} onOpen={(p) => void openProject(p.path)} onForget={(p) => void ipc.projectForget(p.path).then(loadProjects)} />
+      ) : tab === "home" ? (
         <Home
           report={report}
           checking={checking}
@@ -261,7 +325,7 @@ export function App() {
           onCreated={(p, parent) => {
             setDialog(null);
             toast(t("home.created", { name: p.name }));
-            void loadProjects();
+            void openProject(p.path);
             if (settings && settings.projectsDir !== parent) void saveSettings({ ...settings, projectsDir: parent });
           }}
         />

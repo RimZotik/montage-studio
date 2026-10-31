@@ -7,6 +7,7 @@ mod components;
 mod db;
 mod error;
 mod ipc;
+mod project;
 mod projects;
 mod settings;
 mod updates;
@@ -42,6 +43,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(ipc.invoke_handler())
         .manage(components::Installs::default())
+        .manage(project::ProjectState::default())
         .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
             ipc.mount_events(app);

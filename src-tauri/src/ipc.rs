@@ -2,7 +2,7 @@
 
 use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{checks, claude_limits, components, projects, settings, updates};
+use crate::{checks, claude_limits, components, project, projects, settings, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -14,7 +14,6 @@ pub fn builder() -> Builder<tauri::Wry> {
         checks::system_check,
         projects::projects_recent,
         projects::project_create,
-        projects::project_open,
         projects::project_forget,
         claude_limits::claude_limits_last,
         claude_limits::claude_limits_refresh,
@@ -23,8 +22,15 @@ pub fn builder() -> Builder<tauri::Wry> {
         updates::update_status,
         updates::update_check_now,
         updates::update_install,
+        project::project_load,
+        project::project_close,
+        project::project_current,
+        project::project_set_sequence,
+        project::project_rename,
+        project::project_undo,
+        project::project_redo,
     ])
-    .events(collect_events![components::ComponentProgress, updates::UpdateChanged])
+    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged])
 }
 
 #[cfg(any(debug_assertions, test))]

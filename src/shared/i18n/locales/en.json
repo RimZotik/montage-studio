@@ -26,12 +26,16 @@
     "redo": "Redo",
     "reload": "Reload window",
     "checkUpdates": "Check for updates",
-    "installUpdate": "Install update"
+    "installUpdate": "Install update",
+    "closeProject": "Close project"
   },
   "tabs": {
     "home": "Home",
     "projects": "Projects",
-    "library": "Library"
+    "library": "Library",
+    "prepare": "Prepare",
+    "edit": "Edit",
+    "export": "Export"
   },
   "search": {
     "projects": "Search projects"
@@ -69,7 +73,6 @@
     "missing": "Folder not found",
     "forget": "Remove from list",
     "reveal": "Show in folder",
-    "opened": "Project “{{name}}” opened. Project pages arrive in version 0.3.",
     "created": "Project “{{name}}” created.",
     "statProjects": "projects",
     "statThisMonth": "opened this month",
@@ -115,7 +118,9 @@
     "empty": "Nothing found"
   },
   "soon": {
-    "page": "This page arrives in one of the next versions."
+    "page": "This page arrives in one of the next versions.",
+    "edit": "The editing timeline arrives in version 0.6.",
+    "export": "Export and the render queue arrive in version 0.8."
   },
   "error": {
     "notProject": "The folder has no project.json — it is not a studio project.",
@@ -125,7 +130,11 @@
     "claudeMissing": "Claude Code not found.",
     "claudeNoLimits": "Claude Code reported no limits — make sure you are signed in with a subscription.",
     "claudeStart": "Could not start Claude Code.",
-    "unknown": "Something went wrong: {{message}}"
+    "unknown": "Something went wrong: {{message}}",
+    "invalidSequence": "These frame settings do not fit: size 16–8192 and even, frame rate 1–240.",
+    "newerProject": "The project was saved by a newer app version — update the app.",
+    "noProject": "No project is open.",
+    "updateInstall": "The update did not install — try again."
   },
   "install": {
     "install": "Install · {{mb}} MB",
@@ -147,5 +156,28 @@
   "update": {
     "install": "Update to {{version}}",
     "downloading": "Downloading update {{version}}: {{pct}}%"
+  },
+  "prepare": {
+    "media": "Media",
+    "mediaSoon": "Project files: drag and drop, thumbnails, waveforms — in version 0.5.",
+    "rules": "Project rules",
+    "rulesSoon": "Brief, rules, style and script for Claude — in version 0.5.",
+    "project": "Project",
+    "name": "Name",
+    "folder": "Folder",
+    "sequence": "Sequence",
+    "size": "Frame size",
+    "w": "w",
+    "h": "h",
+    "background": "Background",
+    "undoHint": "Changes are saved at once; undo with Ctrl+Z."
+  },
+  "projects": {
+    "name": "Name",
+    "format": "Format",
+    "opened": "Opened",
+    "created": "Created",
+    "folder": "Folder",
+    "nothing": "Nothing found."
   }
 }

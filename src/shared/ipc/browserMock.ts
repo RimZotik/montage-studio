@@ -32,6 +32,8 @@ const DATA: Record<string, unknown> = {
   },
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mockProject: any = null;
 const callbacks = new Map<number, (payload: unknown) => void>();
 const listeners = new Map<string, number[]>();
 
@@ -72,9 +74,25 @@ export function installBrowserMock() {
         return null;
       }
       if (cmd === "update_status") return { version: "0.2.0", notes: null, phase: "ready", progress: 1 };
+      // Проект: открытие, правки последовательности и имени с отменой — в памяти.
+      if (cmd === "project_load") {
+        const path = String(args?.path);
+        mockProject = { path, project: { version: 1, name: path.split("\\").pop() ?? "Проект", series: null, sequence: { width: 1080, height: 1920, fps: 60, durationFrames: 0, background: "#000000" }, libraryRules: [] }, tracks: 0, clips: 0, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null };
+        return structuredClone(mockProject);
+      }
+      if (cmd === "project_set_sequence" && mockProject) {
+        mockProject = { ...mockProject, project: { ...mockProject.project, sequence: args?.sequence }, canUndo: true };
+        emit("project-changed", mockProject);
+        return structuredClone(mockProject);
+      }
+      if (cmd === "project_close") {
+        mockProject = null;
+        return null;
+      }
       if (cmd === "settings_update") return args?.value;
       // `#install` в адресе — сразу показать ход установки ffmpeg (для снимков).
       if (cmd === "system_check" && location.hash === "#install") setTimeout(() => fakeInstall("ffmpeg"), 300);
+      if (cmd === "system_check" && location.hash === "#project") setTimeout(() => (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(), 300);
       if (cmd === "claude_limits_refresh") return DATA.claude_limits_last;
       if (cmd in DATA) return structuredClone(DATA[cmd]);
       return null;

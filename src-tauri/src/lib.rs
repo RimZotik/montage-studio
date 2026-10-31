@@ -19,6 +19,27 @@ use std::sync::Arc;
 
 use tauri::Manager;
 
+/// Журнал по группам (`docs/architecture.md`): `app` — все, `errors` — предупреждения и ошибки,
+/// `claude` — чат и лимиты, `media` — медиа и проекты, `system` — проверки, компоненты, обновления.
+/// Открытым текстом (код открытый, личного в журнале нет), файлы — в папке журнала приложения.
+fn logging() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{Target, TargetKind};
+    let file = |name: &str| Target::new(TargetKind::LogDir { file_name: Some(name.into()) });
+    let group = |name: &'static str, parts: &'static [&'static str]| file(name).filter(move |m| parts.iter().any(|p| m.target().contains(p)));
+    tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .level(log::LevelFilter::Info)
+        .max_file_size(5_000_000)
+        .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+        .target(Target::new(TargetKind::Stdout))
+        .target(file("app"))
+        .target(file("errors").filter(|m| m.level() <= log::Level::Warn))
+        .target(group("claude", &["::chat", "claude_limits"]))
+        .target(group("media", &["::media", "::project", "::projects", "::rules"]))
+        .target(group("system", &["::checks", "::components", "::updates"]))
+        .build()
+}
+
 pub fn run() {
     // Паника в любом потоке — в журнал (иначе в выпуске без консоли ее не увидеть).
     std::panic::set_hook(Box::new(|info| log::error!("panic: {info}")));
@@ -34,13 +55,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .level(log::LevelFilter::Info)
-                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: Some("studio".into()) }))
-                .target(tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout))
-                .build(),
-        )
+        .plugin(logging())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -48,6 +63,7 @@ pub fn run() {
         .manage(components::Installs::default())
         .manage(project::ProjectState::default())
         .manage(chat::ChatState::default())
+        .manage(media::MediaJobs::default())
         .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
             ipc.mount_events(app);

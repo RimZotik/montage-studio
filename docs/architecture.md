@@ -94,7 +94,7 @@ docs/                   документация
 | Настройки | `%APPDATA%\<app-id>\settings.json` |
 | Указатель и учет (SQLite) | `%APPDATA%\<app-id>\studio.db`: `projects` (недавние, путь, формат, последнее открытие), `tools`, `tool_runs` ([extensions.md](extensions.md)), `claude_turns` (расход по проектам, [claude-bridge.md](claude-bridge.md)) |
 | Компоненты | `%LOCALAPPDATA%\<app-id>\components\` (`docs/components.md`) |
-| Журнал | `%LOCALAPPDATA%\<app-id>\logs\` |
+| Журнал | `%LOCALAPPDATA%\<app-id>\logs\` — по группам, открытым текстом: `app.log` (все), `errors.log` (предупреждения и ошибки), `claude.log` (чат, лимиты), `media.log` (медиа, проекты, правила), `system.log` (проверки, компоненты, обновления); до 5 МБ, 3 старых файла |
 | Библиотека (общие правила, стили, звуки, шаблоны) | `Документы\Montage Studio\Library\` — папки, видны пользователю |
 | Проект | любая папка пользователя (`docs/project-format.md`) |
 

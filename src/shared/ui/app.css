@@ -302,3 +302,39 @@ input { font: inherit; color: inherit; }
 .rstate { margin-left: auto; font-size: 11px; color: var(--faint); }
 .ruletext { flex: 1; min-height: 0; border: 0; outline: 0; resize: none; padding: 16px 20px; font: 13px/1.65 var(--font); color: var(--text); background: transparent; user-select: text; }
 .ruletext::placeholder { color: var(--faint); }
+
+/* Границы колонок */
+.splitter { width: 5px; margin: 0 -2px; flex: none; cursor: col-resize; position: relative; z-index: 3; }
+.splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background: var(--line); transition: background 0.12s, width 0.12s; }
+.splitter:hover::after, .splitter.on::after { background: var(--accent); width: 2px; left: 1.5px; }
+.prepare .col + .col { border-left: 0; }
+.chat { border-left: 0; }
+
+/* Перетаскивание файлов в окно проекта */
+.workspace { position: relative; }
+.dropover { position: absolute; inset: 6px; border: 2px dashed var(--accent); border-radius: 12px; background: rgba(255, 242, 233, 0.72); display: flex; align-items: center; justify-content: center; z-index: 40; pointer-events: none; animation: pop 0.12s ease-out; }
+.dropover span { background: #fff; border-radius: 8px; padding: 10px 16px; box-shadow: var(--shadow); font-weight: 500; color: var(--accent-ink); }
+
+/* Выбранный файл медиа */
+.mc { border-radius: 6px; padding: 2px; margin: -2px; }
+.mc.sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* Предпросмотр */
+.preview { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: 0; }
+.preview .stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 20px; background: radial-gradient(ellipse at center, #fffaf6 0%, #f6efe8 100%); }
+.preview .stage video, .preview .stage > img { max-width: 100%; max-height: 100%; border-radius: 8px; box-shadow: 0 18px 50px rgba(60, 40, 20, 0.22); background: #000; cursor: pointer; }
+.preview .stage.img { background: repeating-conic-gradient(#f3eee9 0% 25%, #fbf8f5 0% 50%) 0 0 / 22px 22px; }
+.preview .stage.img > img { cursor: default; background: none; }
+.wavebox { position: relative; width: 100%; max-width: 980px; height: 200px; border-radius: 10px; background: #fff; box-shadow: 0 10px 34px rgba(60, 40, 20, 0.12); overflow: hidden; cursor: pointer; }
+.wavebox img { position: absolute; inset: 16px 0; width: 100%; height: calc(100% - 32px); object-fit: fill; }
+.wavebox .played { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(242, 138, 75, 0.12); border-right: 2px solid var(--accent); pointer-events: none; }
+.wavebox .nowave { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); }
+.transport { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--line); }
+.playbtn { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; }
+.playbtn:hover { background: var(--accent-hover); }
+.tc { font-size: 12px; min-width: 52px; }
+.scrub { flex: 1; -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--p), var(--line) var(--p)); outline: 0; }
+.scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--accent); cursor: pointer; }
+.iconbtn.on { color: var(--accent-ink); }
+.pinfo { flex: none; display: flex; gap: 10px; align-items: baseline; padding: 0 16px 10px; font-size: 12px; }
+.pinfo .mono { color: var(--muted); font-size: 11px; }

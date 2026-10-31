@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type AppError, type RuleFile, commands as ipc } from "@/shared/ipc/bindings";
+import { Eye } from "lucide-react";
+import { type AppError, type MediaItem, type RuleFile, commands as ipc } from "@/shared/ipc/bindings";
+import { Preview } from "./Preview";
 
 const SAVE_AFTER_MS = 600;
 
 /** Правила проекта для Claude: бриф, правила, стиль, сценарий. Сохраняются сами через паузу в
  *  наборе; правки Claude подтягиваются после его ответа (`reloadKey`). */
-export function RulesColumn({ onError, reloadKey }: { onError: (e: AppError) => void; reloadKey: number }) {
+export function RulesColumn({ onError, reloadKey, preview, projectPath }: { onError: (e: AppError) => void; reloadKey: number; preview: MediaItem | null; projectPath: string }) {
   const { t } = useTranslation();
   const [files, setFiles] = useState<RuleFile[]>([]);
   const [active, setActive] = useState("brief");
@@ -31,10 +33,20 @@ export function RulesColumn({ onError, reloadKey }: { onError: (e: AppError) => 
   );
 
   const current = files.find((f) => f.name === active);
+  // Выбрали файл в медиа — открыть просмотр.
+  useEffect(() => {
+    if (preview) setActive("preview");
+  }, [preview]);
 
   return (
     <section className="col rules">
       <div className="rtabs">
+        {preview && (
+          <button className={active === "preview" ? "on" : ""} onClick={() => setActive("preview")}>
+            <Eye size={13} strokeWidth={1.75} />
+            {t("preview.tab")}
+          </button>
+        )}
         <span className="colhead">{t("prepare.rules")}</span>
         {files.map((f) => (
           <button key={f.name} className={active === f.name ? "on" : ""} onClick={() => setActive(f.name)}>
@@ -42,8 +54,11 @@ export function RulesColumn({ onError, reloadKey }: { onError: (e: AppError) => 
             {f.text.trim() === "" && <span className="dot" />}
           </button>
         ))}
-        <span className="rstate">{t(`rules.state.${state}`)}</span>
+        {active !== "preview" && <span className="rstate">{t(`rules.state.${state}`)}</span>}
       </div>
+      {active === "preview" && preview ? (
+        <Preview item={preview} projectPath={projectPath} />
+      ) : (
       <textarea
         className="ruletext"
         spellCheck={false}
@@ -57,6 +72,7 @@ export function RulesColumn({ onError, reloadKey }: { onError: (e: AppError) => 
           timer.current = setTimeout(() => void save(active, text), SAVE_AFTER_MS);
         }}
       />
+      )}
     </section>
   );
 }

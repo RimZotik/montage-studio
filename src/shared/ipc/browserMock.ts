@@ -74,6 +74,8 @@ export function installBrowserMock() {
   let next = 1;
   w.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
+    // Файлов проекта в браузере нет — пустая картинка вместо адреса файла.
+    convertFileSrc: () => "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
     transformCallback: (cb: (payload: unknown) => void) => {
       const id = next++;
       callbacks.set(id, cb);
@@ -118,6 +120,7 @@ export function installBrowserMock() {
           { name: "style", text: "" },
           { name: "script", text: "" },
         ];
+      if (cmd === "media_import") return { imported: 1, skipped: [{ name: "short01_v4.mp4", reason: "busy" }] };
       if (cmd === "chat_history") return MOCK_CHAT;
       if (cmd === "chat_busy") return false;
       if (cmd === "chat_send") {
@@ -131,6 +134,7 @@ export function installBrowserMock() {
       if (cmd === "settings_update") return args?.value;
       // `#install` в адресе — сразу показать ход установки ffmpeg (для снимков).
       if (cmd === "system_check" && location.hash === "#install") setTimeout(() => fakeInstall("ffmpeg"), 300);
+      if (cmd === "system_check" && location.hash === "#preview") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelector(".mc") as HTMLElement | null)?.click(), 400); }, 300);
       if (cmd === "system_check" && location.hash === "#project") setTimeout(() => (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(), 300);
       if (cmd === "claude_limits_refresh") return DATA.claude_limits_last;
       if (cmd in DATA) return structuredClone(DATA[cmd]);

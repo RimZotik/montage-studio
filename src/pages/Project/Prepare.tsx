@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppError, ProjectView, Sequence } from "@/shared/ipc/bindings";
+import type { AppError, MediaItem, ProjectView, Sequence } from "@/shared/ipc/bindings";
+import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { MediaColumn } from "./MediaColumn";
 import { RulesColumn } from "./RulesColumn";
 
@@ -28,10 +29,11 @@ function NumberField({ value, suffix, onCommit }: { value: number; suffix: strin
   );
 }
 
-type Props = { view: ProjectView; onSequence: (s: Sequence) => void; onRename: (name: string) => void; onError: (e: AppError) => void; onImported: (n: number) => void; rulesKey: number };
+type Props = { view: ProjectView; onSequence: (s: Sequence) => void; onRename: (name: string) => void; onError: (e: AppError) => void; onImport: (files: string[]) => void; mediaKey: number; rulesKey: number };
+const WIDTHS = { media: 300, seq: 340 };
 
 /** «Подготовка»: медиа проекта, правила для Claude, имя и последовательность (с отменой). */
-export function Prepare({ view, onSequence, onRename, onError, onImported, rulesKey }: Props) {
+export function Prepare({ view, onSequence, onRename, onError, onImport, mediaKey, rulesKey }: Props) {
   const { t } = useTranslation();
   const seq = view.project.sequence;
   const [name, setName] = useState(view.project.name);
@@ -39,13 +41,18 @@ export function Prepare({ view, onSequence, onRename, onError, onImported, rules
   useEffect(() => setName(view.project.name), [view.project.name]);
   useEffect(() => setBg(seq.background ?? "#000000"), [seq.background]);
   const set = (patch: Partial<Sequence>) => onSequence({ ...seq, ...patch });
+  const [w, setW] = useWidths("prepare", WIDTHS);
+  const [preview, setPreview] = useState<MediaItem | null>(null);
+  useEffect(() => setPreview(null), [view.path]);
 
   return (
     <div className="prepare">
-      <MediaColumn projectPath={view.path} onError={onError} onImported={onImported} />
-      <RulesColumn onError={onError} reloadKey={rulesKey} />
+      <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={preview?.path ?? null} onSelect={setPreview} onError={onError} onImport={onImport} style={{ width: w.media }} />
+      <Splitter width={w.media} min={220} max={560} side="left" onChange={(v) => setW("media", v)} onReset={() => setW("media", WIDTHS.media)} />
+      <RulesColumn onError={onError} reloadKey={rulesKey} preview={preview} projectPath={view.path} />
+      <Splitter width={w.seq} min={260} max={520} side="right" onChange={(v) => setW("seq", v)} onReset={() => setW("seq", WIDTHS.seq)} />
 
-      <section className="col seq">
+      <section className="col seq" style={{ width: w.seq }}>
         <div className="colhead">{t("prepare.project")}</div>
         <div className="lbl">{t("prepare.name")}</div>
         <input

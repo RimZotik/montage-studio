@@ -122,7 +122,7 @@ function AskCard({ a, answer, onDecide }: { a: Ask; answer?: string; onDecide: (
 }
 
 /** Панель чата с Claude в открытом проекте (docs/claude-bridge.md). */
-export function ChatPanel({ projectPath, onError }: { projectPath: string; onError: (e: AppError) => void }) {
+export function ChatPanel({ projectPath, onError, width }: { projectPath: string; onError: (e: AppError) => void; width: number }) {
   const { t, i18n } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
@@ -204,7 +204,7 @@ export function ChatPanel({ projectPath, onError }: { projectPath: string; onErr
   const fmt = (n: number) => n.toLocaleString(i18n.language);
 
   return (
-    <aside className="chat">
+    <aside className="chat" style={{ width }}>
       <div className="chathead">
         <b>Claude</b>
         {model && <span className="model">{model.replace(/^claude-/, "")}</span>}

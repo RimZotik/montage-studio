@@ -1,11 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { AudioLines, Clapperboard, Image, Mic, Music, Upload } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type AppError, type MediaItem, commands as ipc } from "@/shared/ipc/bindings";
+import { type AppError, type MediaItem, commands as ipc, events } from "@/shared/ipc/bindings";
 
 const CATS: { id: string; icon: ReactNode }[] = [
   { id: "footage", icon: <Clapperboard size={14} strokeWidth={1.75} /> },
@@ -21,12 +20,22 @@ function duration(s: number | null | undefined): string {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-/** Медиа проекта: перетаскивание файлов в окно, импорт, категории, миниатюры. */
-export function MediaColumn({ projectPath, onError, onImported }: { projectPath: string; onError: (e: AppError) => void; onImported: (n: number) => void }) {
+type Props = {
+  projectPath: string;
+  /** Меняется после импорта перетаскиванием в окно — перечитать. */
+  reloadKey: number;
+  selected: string | null;
+  onSelect: (item: MediaItem) => void;
+  onError: (e: AppError) => void;
+  onImport: (files: string[]) => void;
+  style?: CSSProperties;
+};
+
+/** Медиа проекта: импорт, категории, миниатюры и волны (строятся фоном), выбор для предпросмотра. */
+export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onError, onImport, style }: Props) {
   const { t } = useTranslation();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [cat, setCat] = useState("footage");
-  const [over, setOver] = useState(false);
   const [menu, setMenu] = useState<{ item: MediaItem; x: number; y: number } | null>(null);
 
   const reload = useCallback(async () => {
@@ -35,37 +44,15 @@ export function MediaColumn({ projectPath, onError, onImported }: { projectPath:
     else onError(r.error);
   }, [onError]);
 
-  const importFiles = useCallback(
-    async (files: string[]) => {
-      if (!files.length) return;
-      const r = await ipc.mediaImport(files);
-      if (r.status === "error") return onError(r.error);
-      onImported(r.data);
-      await reload();
-    },
-    [onError, onImported, reload],
-  );
-
   useEffect(() => {
     void reload();
-  }, [reload, projectPath]);
+  }, [reload, projectPath, reloadKey]);
 
-  // Файлы, перетащенные в окно, — в проект.
+  // Фоновая подготовка (миниатюры, волны, длительность) закончилась — перечитать.
   useEffect(() => {
-    let off: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((e) => {
-        if (e.payload.type === "over" || e.payload.type === "enter") setOver(true);
-        else if (e.payload.type === "leave") setOver(false);
-        else if (e.payload.type === "drop") {
-          setOver(false);
-          void importFiles(e.payload.paths);
-        }
-      })
-      .then((f) => (off = f))
-      .catch(() => {});
-    return () => off?.();
-  }, [importFiles]);
+    const off = events.mediaChanged.listen(() => void reload());
+    return () => void off.then((f) => f());
+  }, [reload]);
 
   useEffect(() => {
     if (!menu) return;
@@ -78,14 +65,14 @@ export function MediaColumn({ projectPath, onError, onImported }: { projectPath:
   const shown = items.filter((i) => i.category === cat);
 
   return (
-    <section className={`col media ${over ? "over" : ""}`}>
+    <section className="col media" style={style}>
       <div className="colhead">{t("prepare.media")}</div>
       <button
         className="dropzone"
         onClick={() =>
           void open({ multiple: true, title: t("prepare.import") }).then((f) => {
-            if (Array.isArray(f)) void importFiles(f);
-            else if (typeof f === "string") void importFiles([f]);
+            if (Array.isArray(f)) onImport(f);
+            else if (typeof f === "string") onImport([f]);
           })
         }
       >
@@ -106,8 +93,9 @@ export function MediaColumn({ projectPath, onError, onImported }: { projectPath:
         {shown.map((m) => (
           <div
             key={m.path}
-            className="mc"
+            className={`mc ${selected === m.path ? "sel" : ""}`}
             title={m.path}
+            onClick={() => onSelect(m)}
             onDoubleClick={() => void revealItemInDir(`${projectPath}\\${m.path.replaceAll("/", "\\")}`)}
             onContextMenu={(e) => {
               e.preventDefault();

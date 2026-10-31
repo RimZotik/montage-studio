@@ -40,7 +40,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         rules::rules_read,
         rules::rules_write,
     ])
-    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged])
+    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged])
 }
 
 #[cfg(any(debug_assertions, test))]

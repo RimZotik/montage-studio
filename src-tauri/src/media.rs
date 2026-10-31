@@ -108,12 +108,26 @@ fn thumb(ffmpeg: &Path, file: &Path, out: &Path, at_s: f64) -> bool {
         && out.is_file()
 }
 
+/// Волна звука картинкой (ffmpeg `showwavespic`), цвет — акцент студии.
+fn waveform(ffmpeg: &Path, file: &Path, out: &Path) -> bool {
+    if out.is_file() {
+        return true;
+    }
+    let _ = std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")));
+    quiet(Command::new(ffmpeg).args(["-v", "error", "-y", "-i"]).arg(file).args(["-filter_complex", "aformat=channel_layouts=mono,showwavespic=s=1200x240:colors=#F28A4B:scale=sqrt", "-frames:v", "1"]).arg(out))
+        .status()
+        .is_ok_and(|s| s.success())
+        && out.is_file()
+}
+
 fn key(rel: &str, meta: &std::fs::Metadata) -> String {
     let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
     format!("{rel}|{}|{mtime}", meta.len())
 }
 
 /// Список медиа проекта (с данными ffprobe и миниатюрами, если ffmpeg есть).
+/// Список медиа. `ffprobe`/`ffmpeg` = `None` — только готовое из кэша (быстро, для интерфейса);
+/// с ними — недостающие данные и миниатюры строятся (фоном, `media_list`).
 pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppResult<Vec<MediaItem>> {
     let cache_dir = dir.join(".studio").join("cache");
     let cache_file = cache_dir.join("probe.json");
@@ -142,14 +156,22 @@ pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppRes
                 }
                 _ => None,
             };
-            let mut hasher = std::hash::DefaultHasher::new();
-            std::hash::Hash::hash(&k, &mut hasher);
-            let thumb_path = cache_dir.join("thumbs").join(format!("{:016x}.jpg", std::hash::Hasher::finish(&hasher)));
+            // Имя файла кэша — SHA-256 ключа (стабильно между версиями программы).
+            let digest = <sha2::Sha256 as sha2::Digest>::digest(k.as_bytes());
+            let id: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
+            let thumb_path = cache_dir.join("thumbs").join(format!("{id}.jpg"));
             let thumb = match (cat, ffmpeg) {
                 ("footage" | "images", Some(ff)) => {
                     let at = probe.as_ref().and_then(|p| p.duration_s).map_or(0.0, |d| (d * 0.1).min(2.0));
                     thumb(ff, &entry.path(), &thumb_path, at).then(|| thumb_path.display().to_string())
                 }
+                ("voice" | "music" | "sfx", Some(ff)) => {
+                    let wave = thumb_path.with_extension("png");
+                    waveform(ff, &entry.path(), &wave).then(|| wave.display().to_string())
+                }
+                // Без ffmpeg — только уже построенное.
+                ("footage" | "images", None) => thumb_path.is_file().then(|| thumb_path.display().to_string()),
+                (_, None) => thumb_path.with_extension("png").is_file().then(|| thumb_path.with_extension("png").display().to_string()),
                 _ => None,
             };
             items.push(MediaItem { path: rel, name, category: cat.to_owned(), size: meta.len(), probe, thumb });
@@ -164,13 +186,33 @@ pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppRes
     Ok(items)
 }
 
-/// Скопировать файлы в проект; неподходящие — пропустить. Возвращает число импортированных.
-pub fn import(dir: &Path, files: &[String], ffprobe: Option<&Path>) -> AppResult<u32> {
+/// Итог импорта: сколько добавлено и что пропущено (имя и причина: `unsupported`, `busy` —
+/// файл открыт другой программой, `io`).
+#[derive(Debug, Clone, Serialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    pub imported: u32,
+    pub skipped: Vec<Skipped>,
+}
+
+#[derive(Debug, Clone, Serialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Skipped {
+    pub name: String,
+    pub reason: String,
+}
+
+/// Скопировать файлы в проект; файл, который не подошел или занят, не мешает остальным.
+pub fn import(dir: &Path, files: &[String], ffprobe: Option<&Path>) -> AppResult<ImportResult> {
     let mut count = 0;
+    let mut skipped = Vec::new();
     for file in files {
         let src = Path::new(file);
         let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let Some(mut cat) = category_of(&name) else { continue };
+        let Some(mut cat) = category_of(&name) else {
+            skipped.push(Skipped { name, reason: "unsupported".into() });
+            continue;
+        };
         if !src.is_file() {
             continue;
         }
@@ -180,31 +222,66 @@ pub fn import(dir: &Path, files: &[String], ffprobe: Option<&Path>) -> AppResult
         let target_dir = dir.join("media").join(cat);
         std::fs::create_dir_all(&target_dir)?;
         let target = free_name(&target_dir, &name);
-        std::fs::copy(src, &target).map_err(|e| AppError::new("io", format!("{}: {e}", src.display())))?;
-        count += 1;
+        match std::fs::copy(src, &target) {
+            Ok(_) => count += 1,
+            Err(e) => {
+                let _ = std::fs::remove_file(&target);
+                // 32 — файл открыт другой программой без права чтения.
+                let reason = if e.raw_os_error() == Some(32) { "busy" } else { "io" };
+                log::warn!("media import skipped {}: {e}", src.display());
+                skipped.push(Skipped { name, reason: reason.into() });
+            }
+        }
     }
-    Ok(count)
+    Ok(ImportResult { imported: count, skipped })
 }
 
 fn open_dir(project: &ProjectState) -> AppResult<PathBuf> {
     project.context().map(|(d, _)| d).ok_or_else(|| AppError::new("noProject", "no project"))
 }
 
+/// Фоновая подготовка медиа идет (одна за раз).
+#[derive(Default)]
+pub struct MediaJobs(std::sync::atomic::AtomicBool);
+
+/// Медиа проекта изменились (готовы миниатюры, волны, данные файлов) — перечитать список.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+pub struct MediaChanged;
+
 #[tauri::command]
 #[specta::specta]
-pub async fn media_list(app: AppHandle, project: State<'_, ProjectState>) -> AppResult<Vec<MediaItem>> {
+pub async fn media_list(app: AppHandle, project: State<'_, ProjectState>, jobs: State<'_, MediaJobs>) -> AppResult<Vec<MediaItem>> {
     let dir = open_dir(&project)?;
+    let dir2 = dir.clone();
+    let items = tauri::async_runtime::spawn_blocking(move || list(&dir2, None, None)).await.map_err(|e| AppError::new("internal", e.to_string()))??;
+    // Чего не хватает (данные файла, миниатюра, волна) — строится фоном, затем `MediaChanged`.
+    let missing = items.iter().any(|i| (i.category != "images" && i.probe.is_none()) || i.thumb.is_none());
     let (fp, ff) = (find(&app, ToolId::Ffprobe), find(&app, ToolId::Ffmpeg));
-    tauri::async_runtime::spawn_blocking(move || list(&dir, fp.as_deref(), ff.as_deref())).await.map_err(|e| AppError::new("internal", e.to_string()))?
+    if missing && fp.is_some() && ff.is_some() && !jobs.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let app2 = app.clone();
+        std::thread::spawn(move || {
+            let result = list(&dir, fp.as_deref(), ff.as_deref());
+            if let Some(j) = tauri::Manager::try_state::<MediaJobs>(&app2) {
+                j.0.store(false, std::sync::atomic::Ordering::SeqCst);
+            }
+            match result {
+                Ok(_) => {
+                    let _ = tauri_specta::Event::emit(&MediaChanged, &app2);
+                }
+                Err(e) => log::warn!("media prepare failed: {}", e.message),
+            }
+        });
+    }
+    Ok(items)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn media_import(app: AppHandle, project: State<'_, ProjectState>, files: Vec<String>) -> AppResult<u32> {
+pub async fn media_import(app: AppHandle, project: State<'_, ProjectState>, files: Vec<String>) -> AppResult<ImportResult> {
     let dir = open_dir(&project)?;
     let fp = find(&app, ToolId::Ffprobe);
     let n = tauri::async_runtime::spawn_blocking(move || import(&dir, &files, fp.as_deref())).await.map_err(|e| AppError::new("internal", e.to_string()))??;
-    log::info!("media imported: {n}");
+    log::info!("media imported: {}, skipped: {}", n.imported, n.skipped.len());
     Ok(n)
 }
 
@@ -250,9 +327,47 @@ mod tests {
         }
         let proj = tmp.path().join("p");
         let files: Vec<String> = ["clip.mp4", "hit.wav", "cover.png", "readme.txt", "clip.mp4"].iter().map(|f| src.join(f).display().to_string()).collect();
-        assert_eq!(import(&proj, &files, None).unwrap(), 4);
+        let r = import(&proj, &files, None).unwrap();
+        assert_eq!((r.imported, r.skipped.len(), r.skipped[0].reason.as_str()), (4, 1, "unsupported"));
         let items = list(&proj, None, None).unwrap();
         let paths: Vec<_> = items.iter().map(|i| i.path.as_str()).collect();
         assert_eq!(paths, ["media/footage/clip-2.mp4", "media/footage/clip.mp4", "media/images/cover.png", "media/sfx/hit.wav"]);
+    }
+}
+
+#[cfg(test)]
+mod live {
+    use super::*;
+
+    /// С установленным компонентом ffmpeg: данные файла, миниатюра и волна строятся.
+    /// `cargo test live_media_tools -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "нужен ffmpeg из компонентов"]
+    fn live_media_tools() {
+        let bin = std::path::PathBuf::from(std::env::var("LOCALAPPDATA").unwrap()).join("app.montagestudio.desktop/components/ffmpeg/bin");
+        let (ff, fp) = (bin.join("ffmpeg.exe"), bin.join("ffprobe.exe"));
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        let make = |args: &[&str], out: &str| assert!(Command::new(&ff).args(["-v", "error", "-y"]).args(args).arg(src.join(out)).status().unwrap().success());
+        make(&["-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=3", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p"], "clip.mp4");
+        make(&["-f", "lavfi", "-i", "sine=frequency=220:duration=60"], "bed.wav");
+        let proj = tmp.path().join("p");
+        let files: Vec<String> = ["clip.mp4", "bed.wav"].iter().map(|f| src.join(f).display().to_string()).collect();
+        let r = import(&proj, &files, Some(&fp)).unwrap();
+        assert_eq!(r.imported, 2);
+        let fast = list(&proj, None, None).unwrap();
+        assert!(fast.iter().all(|i| i.thumb.is_none()), "без инструментов — только кэш");
+        let full = list(&proj, Some(&fp), Some(&ff)).unwrap();
+        for i in &full {
+            println!("{} {:?} thumb={:?}", i.path, i.probe, i.thumb.as_ref().map(|t| std::fs::metadata(t).map(|m| m.len()).unwrap_or(0)));
+        }
+        let clip = full.iter().find(|i| i.category == "footage").unwrap();
+        assert_eq!(clip.probe.as_ref().and_then(|p| p.height), Some(1920));
+        assert!(clip.thumb.is_some());
+        let bed = full.iter().find(|i| i.name == "bed.wav").unwrap();
+        assert_eq!(bed.category, "music", "звук от 45 с — музыка");
+        assert!(bed.thumb.as_deref().is_some_and(|t| t.ends_with(".png")), "волна построена");
+        assert!(list(&proj, None, None).unwrap().iter().all(|i| i.thumb.is_some()), "после фона — из кэша");
     }
 }

@@ -175,7 +175,13 @@
     "dropHint": "or click — we sort them into folders",
     "emptyCat": "Empty",
     "moveTo": "Move to",
-    "imported": "Files added: {{count}}"
+    "imported": "Files added: {{count}}",
+    "dropRelease": "Release — files go into the project",
+    "skipped": {
+      "busy": "“{{name}}” is open in another program — close it and drop again.",
+      "unsupported": "“{{name}}” — this format is not supported.",
+      "io": "“{{name}}” was not copied."
+    }
   },
   "projects": {
     "name": "Name",
@@ -247,5 +253,12 @@
       "style": "Colors, fonts, animation character, sounds.",
       "script": "Voiceover text and the scene plan."
     }
+  },
+  "preview": {
+    "tab": "Preview",
+    "play": "Play / pause (Space)",
+    "loop": "Loop",
+    "mute": "Sound",
+    "noWave": "The waveform appears after processing"
   }
 }

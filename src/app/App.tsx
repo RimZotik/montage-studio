@@ -1,4 +1,5 @@
 import { appLogDir } from "@tauri-apps/api/path";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -13,6 +14,7 @@ import { ChatPanel } from "@/panels/Claude/ChatPanel";
 import { pickLanguage } from "@/shared/i18n";
 import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type ProjectView, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
+import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
 import { LimitsIndicator } from "./Limits";
 import { Palette } from "./Palette";
@@ -46,6 +48,9 @@ export function App() {
   const [autoLimits, setAutoLimits] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const [rulesKey, setRulesKey] = useState(0);
+  const [mediaKey, setMediaKey] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
+  const [ws, setWs] = useWidths("workspace", { chat: 400 });
 
   const toast = useCallback((text: string, error = false) => {
     const id = Date.now() + Math.random();
@@ -159,6 +164,51 @@ export function App() {
     setProject(null);
     setTab("home");
   }, []);
+
+  /** Импорт файлов в проект: итог одним сообщением, занятые и неподходящие файлы — по имени. */
+  const importFiles = useCallback(
+    async (files: string[]) => {
+      if (!files.length) return;
+      const r = await ipc.mediaImport(files);
+      if (r.status === "error") return fail(r.error);
+      const { imported, skipped } = r.data;
+      if (imported) toast(t("prepare.imported", { count: imported }));
+      for (const s of skipped) toast(t(`prepare.skipped.${s.reason}`, { name: s.name, defaultValue: t("prepare.skipped.io", { name: s.name }) }), true);
+      setMediaKey((k) => k + 1);
+    },
+    [fail, t, toast],
+  );
+
+  // Файлы, перетащенные в окно открытого проекта: подсветка всего окна и импорт. Подписка
+  // снимается и тогда, когда эффект закрылся раньше, чем она оформилась (двойной запуск эффекта).
+  useEffect(() => {
+    if (!project) return;
+    let off: (() => void) | undefined;
+    let closed = false;
+    let webview;
+    try {
+      webview = getCurrentWebview();
+    } catch {
+      return;
+    }
+    webview
+      .onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === "enter" || p.type === "over") setDragOver(true);
+        else if (p.type === "leave") setDragOver(false);
+        else if (p.type === "drop") {
+          setDragOver(false);
+          setTab("prepare");
+          void importFiles(p.paths);
+        }
+      })
+      .then((f) => (closed ? f() : (off = f)))
+      .catch(() => {});
+    return () => {
+      closed = true;
+      off?.();
+    };
+  }, [project?.path, importFiles]);
 
   /** Итог правки проекта: ошибка — сообщение (новое состояние придет событием). */
   const edited = useCallback((r: { status: "ok" } | { status: "error"; error: AppError }) => r.status === "error" && fail(r.error), [fail]);
@@ -286,13 +336,24 @@ export function App() {
               onSequence={(sequence) => void ipc.projectSetSequence(sequence).then(edited)}
               onRename={(name) => void ipc.projectRename(name).then(edited)}
               onError={fail}
-              onImported={(n) => toast(t("prepare.imported", { count: n }))}
+              onImport={(files) => void importFiles(files)}
+              mediaKey={mediaKey}
               rulesKey={rulesKey}
             />
           ) : (
             <div className="soon">{t(`soon.${tab}`)}</div>
           )}
-          {chatOpen && <ChatPanel projectPath={project.path} onError={fail} />}
+          {chatOpen && (
+            <>
+              <Splitter width={ws.chat} min={320} max={720} side="right" onChange={(v) => setWs("chat", v)} onReset={() => setWs("chat", 400)} />
+              <ChatPanel projectPath={project.path} onError={fail} width={ws.chat} />
+            </>
+          )}
+          {dragOver && (
+            <div className="dropover">
+              <span>{t("prepare.dropRelease")}</span>
+            </div>
+          )}
         </div>
       ) : tab === "projects" ? (
         <Projects projects={projects} query={query} onOpen={(p) => void openProject(p.path)} onForget={(p) => void ipc.projectForget(p.path).then(loadProjects)} />

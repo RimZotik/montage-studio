@@ -64,7 +64,7 @@ export const commands = {
 	/**  Идет ли ответ сейчас. */
 	chatBusy: () => __TAURI_INVOKE<boolean>("chat_busy"),
 	mediaList: () => typedError<MediaItem[], AppError>(__TAURI_INVOKE("media_list")),
-	mediaImport: (files: string[]) => typedError<number, AppError>(__TAURI_INVOKE("media_import", { files })),
+	mediaImport: (files: string[]) => typedError<ImportResult, AppError>(__TAURI_INVOKE("media_import", { files })),
 	/**  Перенести файл в другую категорию (например, звук → голос). */
 	mediaMove: (path: string, category: string) => typedError<null, AppError>(__TAURI_INVOKE("media_move", { path, category })),
 	rulesRead: () => typedError<RuleFile[], AppError>(__TAURI_INVOKE("rules_read")),
@@ -76,6 +76,7 @@ export const events = {
 	chatEvent: makeEvent<ChatEvent>("chat-event"),
 	componentProgress: makeEvent<ComponentProgress>("component-progress"),
 	limitsChanged: makeEvent<LimitsChanged>("limits-changed"),
+	mediaChanged: makeEvent<MediaChanged>("media-changed"),
 	projectChanged: makeEvent<ProjectChanged>("project-changed"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
@@ -126,6 +127,15 @@ export type Hardware = {
 	gpus: string[],
 };
 
+/**
+ *  Итог импорта: сколько добавлено и что пропущено (имя и причина: `unsupported`, `busy` —
+ *  файл открыт другой программой, `io`).
+ */
+export type ImportResult = {
+	imported: number,
+	skipped: Skipped[],
+};
+
 export type LimitWindow = {
 	/**  Доля использования, 0–1. */
 	utilization: number | null,
@@ -144,6 +154,9 @@ export type Limits = {
 
 /**  Лимиты обновились (из чата или по кнопке). */
 export type LimitsChanged = Limits;
+
+/**  Медиа проекта изменились (готовы миниатюры, волны, данные файлов) — перечитать список. */
+export type MediaChanged = null;
 
 export type MediaItem = {
 	/**  Путь внутри проекта: `media/footage/clip.mp4`. */
@@ -233,6 +246,11 @@ export type Settings = {
 	language?: string,
 	/**  Папка новых проектов по умолчанию. */
 	projectsDir?: string | null,
+};
+
+export type Skipped = {
+	name: string,
+	reason: string,
 };
 
 export type SystemReport = {

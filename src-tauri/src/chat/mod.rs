@@ -80,7 +80,14 @@ fn save_session(dir: &Path, id: &str, model: &str) {
     let _ = std::fs::write(claude_dir(dir).join("session.json"), serde_json::json!({ "version": 1, "sessionId": id, "model": model }).to_string());
 }
 
+/// Остановить `claude` вместе с дочерними процессами (на Windows `kill` останавливает только
+/// сам процесс, его дочерние остались бы висеть).
 fn kill(session: &mut Session) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &session.child.id().to_string()]).creation_flags(0x0800_0000).status();
+    }
     let _ = session.child.kill();
     let _ = session.child.wait();
 }

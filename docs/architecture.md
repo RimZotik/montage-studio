@@ -60,7 +60,11 @@
 | MCP | сервер в ядре по HTTP на 127.0.0.1 со случайным ключом на запуск |
 | Журнал | tauri-plugin-log, файлы по группам |
 
-База данных не нужна: проект — папка, настройки и списки — JSON с версией.
+| Указатель и учет | SQLite (rusqlite) в ядре, миграции по `PRAGMA user_version` |
+
+Проект — самостоятельная папка (переносится и открывается без базы). SQLite приложения —
+указатель и учет: недавние проекты, инструменты пользователя и их запуски, расход Claude по
+проектам; настройки — JSON с версией.
 
 ### Раскладка репозитория
 
@@ -87,7 +91,8 @@ docs/                   документация
 
 | Что | Где |
 | --- | --- |
-| Настройки, недавние проекты | `%APPDATA%\<app-id>\settings.json`, `recent.json` |
+| Настройки | `%APPDATA%\<app-id>\settings.json` |
+| Указатель и учет (SQLite) | `%APPDATA%\<app-id>\studio.db`: `projects` (недавние, путь, формат, последнее открытие), `tools`, `tool_runs` ([extensions.md](extensions.md)), `claude_turns` (расход по проектам, [claude-bridge.md](claude-bridge.md)) |
 | Компоненты | `%LOCALAPPDATA%\<app-id>\components\` (`docs/components.md`) |
 | Журнал | `%LOCALAPPDATA%\<app-id>\logs\` |
 | Библиотека (общие правила, стили, звуки, шаблоны) | `Документы\Montage Studio\Library\` — папки, видны пользователю |

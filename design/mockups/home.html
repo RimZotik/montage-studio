@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Montage Studio — главная</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+:root{
+  --bg:#FFFFFF;--bar:#FBF9F7;--hover:#F5F1ED;--line:#EDE8E3;
+  --text:#1F1A17;--muted:#7A716B;--faint:#B4ABA4;
+  --accent:#F28A4B;--accent-ink:#C9581C;--accent-soft:#FFF2E9;
+  --grad:linear-gradient(135deg,#FFFFFF 55%,#FFF3EA 78%,#FFE1CC 100%);
+  --ok:#2E9E68;--warn:#D99A1E;--danger:#E5484D;
+  --mono:'Geist Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font:13px/1.35 'Geist',system-ui,sans-serif;display:flex;flex-direction:column;user-select:none}
+svg.lucide{width:16px;height:16px;stroke-width:1.75;display:block;flex:none}
+.s14 svg.lucide{width:14px;height:14px}
+.row{display:flex;align-items:center;gap:8px}
+.muted{color:var(--muted)}.faint{color:var(--faint)}.mono{font-family:var(--mono)}
+
+/* 1. системная строка */
+.sys{height:30px;flex:none;display:flex;align-items:center;background:var(--bar);border-bottom:1px solid var(--line);padding-left:10px;position:relative}
+.mark{width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,#FFB27F,#F28A4B 60%,#E56B2A);position:relative;margin-right:10px;flex:none}
+.mark:after{content:'';position:absolute;left:5px;top:4px;width:0;height:0;border-left:7px solid #fff;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.menu{display:flex;height:100%}
+.menu>div{position:relative;height:100%}
+.menu>div>span{display:flex;align-items:center;height:100%;padding:0 9px;font-size:12px;color:var(--muted)}
+.menu>div:hover>span,.menu>div.open>span{color:var(--text);background:var(--hover)}
+.drop{display:none;position:absolute;top:30px;left:0;min-width:240px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(60,40,20,.12);z-index:20;animation:pop .14s ease-out}
+.menu>div.open .drop{display:block}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.mi{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:5px;font-size:12px}
+.mi svg.lucide{width:14px;height:14px;color:var(--muted)}
+.mi:hover{background:var(--accent-soft)}
+.mi .k{margin-left:auto;color:var(--faint);font:11px var(--mono)}
+.sep{height:1px;background:var(--line);margin:4px 2px}
+.wtitle{position:absolute;left:50%;transform:translateX(-50%);font-size:12px;color:var(--muted)}
+.wctl{margin-left:auto;display:flex;height:100%}
+.wctl span{width:46px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.wctl span:hover{background:var(--hover)}.wctl span.x:hover{background:#E5484D;color:#fff}
+.wctl svg.lucide{width:14px;height:14px}
+
+/* 2. строка страницы */
+.page{height:40px;flex:none;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);gap:4px}
+.tabs{display:flex;height:100%;gap:18px;margin-right:8px}
+.tabs span{display:flex;align-items:center;height:100%;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+.tabs span:hover{color:var(--text)}
+.tabs span.on{color:var(--text);font-weight:500;border-color:var(--accent)}
+.right{margin-left:auto;display:flex;align-items:center;gap:14px;height:100%}
+.search{display:flex;align-items:center;gap:6px;width:260px;height:28px;padding:0 8px;border:1px solid var(--line);border-radius:6px;color:var(--faint);font-size:12px}
+.search .k{margin-left:auto;font:11px var(--mono)}
+.lim{display:flex;align-items:center;gap:12px;height:28px;padding:0 8px;border-radius:6px;cursor:pointer;position:relative}
+.lim:hover{background:var(--hover)}
+.lim .b{display:flex;flex-direction:column;gap:3px;width:78px}
+.lim .t{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);line-height:1}
+.lim .t b{font:500 10.5px var(--mono);color:var(--text)}
+.bar{height:2px;background:var(--line);border-radius:1px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.bar i.w{background:var(--warn)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--line);background:#fff;color:var(--text);font:500 12px 'Geist';cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--hover)}.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.pri:hover{background:#EC7D3B}
+.btn.q{border-color:transparent;color:var(--muted);padding:0 8px}.btn.q:hover{color:var(--text)}
+
+/* всплывающая панель лимитов */
+.pop{display:none;position:absolute;top:36px;right:0;width:320px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 40px rgba(60,40,20,.14);padding:14px;z-index:30;animation:pop .14s ease-out;cursor:default}
+.pop.open{display:block}
+.pop h4{font-size:12px;font-weight:600;margin-bottom:10px}
+.pl{margin-bottom:12px}
+.pl .r{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px}
+.pl .r span:last-child{color:var(--muted)}
+.pl .bar{height:4px;border-radius:2px}
+.pop .kv{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-top:1px solid var(--line)}
+.pop .kv span:first-child{color:var(--muted)}
+.pop .note{font-size:11px;color:var(--faint);margin-top:8px;line-height:1.4}
+
+/* содержимое главной */
+.main{flex:1;min-height:0;display:flex;background:var(--grad)}
+.start{width:280px;flex:none;padding:28px 20px 20px 24px;border-right:1px solid var(--line);display:flex;flex-direction:column}
+.start h1{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.start .ver{font-size:12px;color:var(--faint);margin:2px 0 22px}
+.act{display:flex;align-items:center;gap:10px;height:36px;padding:0 8px;margin:0 -8px;border-radius:6px;cursor:pointer}
+.act:hover{background:var(--hover)}
+.act svg.lucide{color:var(--accent-ink)}
+.act .k{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.sh{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;margin:26px 0 8px}
+.ra{display:flex;align-items:center;gap:10px;height:30px;font-size:12px;color:var(--muted);cursor:pointer}
+.ra:hover{color:var(--text)}
+.ra .p{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.attn{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.attn svg.lucide{color:var(--warn)}
+.attn a{color:var(--accent-ink);text-decoration:none;margin-left:auto;font-weight:500}
+
+.recent{flex:1;min-width:0;padding:28px 32px;overflow:auto}
+.rh{display:flex;align-items:baseline;gap:16px;margin-bottom:18px}
+.rh h2{font-size:16px;font-weight:600}
+.rh .flt{display:flex;gap:14px;font-size:12px;color:var(--muted)}
+.rh .flt span{cursor:pointer}.rh .flt span.on{color:var(--text);font-weight:500}
+.rh .all{margin-left:auto;font-size:12px;color:var(--accent-ink);display:flex;align-items:center;gap:4px;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:28px 22px}
+.pr{cursor:pointer}
+.th{aspect-ratio:16/10;border-radius:6px;background:#F6F2EE;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;transition:background .15s}
+.pr:hover .th{background:#F1EAE3}
+.th i.fr{display:block;border-radius:3px}
+.th .fmt{position:absolute;left:8px;top:8px;font:500 10px var(--mono);color:var(--muted)}
+.th .dur{position:absolute;right:8px;bottom:7px;font:500 10px var(--mono);color:var(--muted)}
+.pr .n{font-weight:500;margin-top:8px}
+.pr .m{font-size:12px;color:var(--muted);margin-top:2px}
+.stats{display:flex;gap:40px;margin-top:40px;padding-top:16px;border-top:1px solid var(--line)}
+.stat .v{font:500 18px var(--mono);letter-spacing:-.02em}
+.stat .l{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* строка состояния */
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--bar);border-top:1px solid var(--line);font-size:11px;color:var(--muted)}
+.status .row{gap:5px}.status svg.lucide{width:12px;height:12px}
+.status .ok svg.lucide{color:var(--ok)}
+.status .r{margin-left:auto;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="sys">
+  <span class="mark"></span>
+  <div class="menu" id="menu"></div>
+  <span class="wtitle">Montage Studio</span>
+  <div class="wctl"><span><i data-lucide="minus"></i></span><span><i data-lucide="square"></i></span><span class="x"><i data-lucide="x"></i></span></div>
+</div>
+
+<div class="page">
+  <div class="tabs"><span class="on" data-i="t.home">Главная</span><span data-i="t.projects">Проекты</span><span data-i="t.library">Библиотека</span></div>
+  <div class="right">
+    <div class="search"><i data-lucide="search"></i><span data-i="search">Поиск проектов</span><span class="k">Ctrl+F</span></div>
+    <div class="lim" id="lim">
+      <div class="b"><div class="t"><span data-i="l.session">Сессия</span><b>33%</b></div><div class="bar"><i style="width:33%"></i></div></div>
+      <div class="b"><div class="t"><span data-i="l.week">Неделя</span><b>78%</b></div><div class="bar"><i class="w" style="width:78%"></i></div></div>
+      <div class="pop" id="pop">
+        <h4 data-i="p.title">Лимиты Claude</h4>
+        <div class="pl"><div class="r"><span data-i="p.s">Сессия (5 часов)</span><span>33% · <span data-i="p.reset">сброс в</span> 03:00</span></div><div class="bar"><i style="width:33%"></i></div></div>
+        <div class="pl"><div class="r"><span data-i="p.w">Неделя</span><span>78% · <span data-i="p.reset2">сброс</span> 6 нояб.</span></div><div class="bar"><i class="w" style="width:78%"></i></div></div>
+        <div class="kv"><span data-i="p.avg">В среднем на проект</span><span class="mono">21% сессии · 46 ответов</span></div>
+        <div class="kv"><span data-i="p.min">На минуту готового ролика</span><span class="mono">≈ 38% сессии</span></div>
+        <div class="note" data-i="p.note">Данные присылает Claude Code после каждого ответа; обновлено 23:58.</div>
+      </div>
+    </div>
+    <span class="btn pri"><i data-lucide="plus"></i><span data-i="new">Новый проект</span></span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="start">
+    <h1 data-i="h.start">Начать</h1>
+    <div class="ver">Montage Studio 0.1</div>
+    <div class="act"><i data-lucide="plus"></i><span data-i="a.new">Новый проект</span><span class="k">Ctrl+N</span></div>
+    <div class="act"><i data-lucide="folder-open"></i><span data-i="a.open">Открыть папку</span><span class="k">Ctrl+O</span></div>
+    <div class="act"><i data-lucide="layout-template"></i><span data-i="a.tpl">Из шаблона</span><span class="k">3</span></div>
+    <div class="attn"><i data-lucide="triangle-alert"></i><span data-i="attn">ffmpeg: есть обновление</span><a href="#" data-i="attn.do">Обновить</a></div>
+  </div>
+
+  <div class="recent">
+    <div class="rh">
+      <h2 data-i="h.recent">Недавние проекты</h2>
+      <div class="flt"><span class="on" data-i="f.all">Все</span><span>9:16</span><span>16:9</span><span>1:1</span></div>
+      <span class="all"><span data-i="h.all">Все проекты</span><i data-lucide="arrow-right"></i></span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="stats">
+      <div class="stat"><div class="v">14</div><div class="l" data-i="st.p">проектов</div></div>
+      <div class="stat"><div class="v">6:42</div><div class="l" data-i="st.d">минут видео за месяц</div></div>
+      <div class="stat"><div class="v">21%</div><div class="l" data-i="st.c">сессии Claude на проект в среднем</div></div>
+      <div class="stat"><div class="v">3</div><div class="l" data-i="st.t">своих инструмента</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="status">
+  <span class="row ok"><i data-lucide="circle-check"></i><span data-i="s.comp">Компоненты готовы</span></span>
+  <span class="row ok"><i data-lucide="sparkles"></i><span data-i="s.claude">Claude Code 2.1.316</span></span>
+  <span class="row"><i data-lucide="cpu"></i><span data-i="s.hw">Аппаратное кодирование</span></span>
+  <span class="row r" id="lang"><i data-lucide="languages"></i><span>RU</span></span>
+</div>
+
+<script>
+const PROJ=[
+ ["Промо, октябрь","9:16","0:30","сегодня, 12:04","Today, 12:04","linear-gradient(170deg,#FFD7BD,#F28A4B)"],
+ ["Обзор функций","16:9","4:12","вчера","Yesterday","linear-gradient(170deg,#E9E2FF,#9A8BFF)"],
+ ["Тизер","9:16","0:18","28 окт","Oct 28","linear-gradient(170deg,#DDF1E6,#5DBB8E)"],
+ ["Инструкция","16:9","2:40","25 окт","Oct 25","linear-gradient(170deg,#DCE8FF,#6F95FF)"],
+ ["Анонс","1:1","0:15","20 окт","Oct 20","linear-gradient(170deg,#FFF0C9,#E0B23A)"],
+ ["Черновик","9:16","0:42","18 окт","Oct 18","linear-gradient(170deg,#FFE3E3,#EE7C7F)"],
+ ["Подборка","16:9","1:05","12 окт","Oct 12","linear-gradient(170deg,#D7F3F3,#38B2B2)"]];
+const EN={"t.home":"Home","t.projects":"Projects","t.library":"Library","search":"Search projects","l.session":"Session","l.week":"Week","p.title":"Claude limits","p.s":"Session (5 hours)","p.reset":"resets at","p.w":"Week","p.reset2":"resets","p.avg":"Average per project","p.min":"Per minute of final video","p.note":"Claude Code reports this after each reply; updated 23:58.","new":"New project","h.start":"Start","a.new":"New project","a.open":"Open folder","a.tpl":"From template","h.recentlist":"Recent","attn":"ffmpeg: update available","attn.do":"Update","h.recent":"Recent projects","f.all":"All","h.all":"All projects","st.p":"projects","st.d":"minutes of video this month","st.c":"of a Claude session per project","st.t":"custom tools","s.comp":"Components ready","s.claude":"Claude Code 2.1.316","s.hw":"Hardware encoding"};
+const MENUS={ru:[["Файл",[["file-plus","Новый проект","Ctrl+N"],["folder-open","Открыть…","Ctrl+O"],["history","Недавние","›"],"-",["download","Импорт медиа","Ctrl+I"],["layout-template","Сохранить как шаблон"],"-",["settings","Настройки","Ctrl+,"],["log-out","Выход","Alt+F4"]]],["Правка",[["undo-2","Отменить","Ctrl+Z"],["redo-2","Повторить","Ctrl+Shift+Z"],"-",["scissors","Вырезать","Ctrl+X"],["copy","Копировать","Ctrl+C"],["clipboard-paste","Вставить","Ctrl+V"],"-",["command","Палитра команд","Ctrl+Shift+P"]]],["Вид",[["panels-top-left","Страницы","›"],["rotate-ccw","Сбросить раскладку"],["sun","Тема","›"],["languages","Язык","›"]]],["Окно",[["image","Медиа"],["play","Предпросмотр"],["rows-3","Таймлайн"],["sparkles","Claude","Ctrl+L"],["square-terminal","Терминал","Ctrl+`"],["film","Очередь рендера"]]],["Справка",[["keyboard","Горячие клавиши"],["package","Компоненты"],["file-text","Открыть журнал"],["info","О программе"]]]],
+ en:["File","Edit","View","Window","Help"]};
+let lang="ru";const RU={};document.querySelectorAll("[data-i]").forEach(e=>RU[e.dataset.i]=e.textContent);
+
+function menu(){const m=document.getElementById("menu");m.innerHTML="";MENUS.ru.forEach(([n,items],i)=>{const d=document.createElement("div");d.innerHTML=`<span>${lang==="ru"?n:MENUS.en[i]}</span><div class="drop">${items.map(it=>it==="-"?'<div class="sep"></div>':`<div class="mi"><i data-lucide="${it[0]}"></i>${it[1]}${it[2]?`<span class="k">${it[2]}</span>`:""}</div>`).join("")}</div>`;d.onclick=e=>{e.stopPropagation();const o=d.classList.contains("open");close();if(!o)d.classList.add("open")};d.onmouseenter=()=>{if(document.querySelector(".menu>div.open")){close();d.classList.add("open")}};m.appendChild(d)});lucide.createIcons()}
+function close(){document.querySelectorAll(".menu>div.open").forEach(x=>x.classList.remove("open"));document.getElementById("pop").classList.remove("open")}
+document.addEventListener("click",close);
+document.getElementById("lim").onclick=e=>{e.stopPropagation();const p=document.getElementById("pop");const o=p.classList.contains("open");close();if(!o)p.classList.add("open")};
+document.getElementById("pop").onclick=e=>e.stopPropagation();
+
+function render(){
+  document.getElementById("grid").innerHTML=PROJ.map(([n,f,d,ru,en,g])=>{const s=f==="9:16"?"height:78%;aspect-ratio:9/16":f==="16:9"?"width:72%;aspect-ratio:16/9":"height:70%;aspect-ratio:1";return `<div class="pr"><div class="th"><span class="fmt">${f}</span><i class="fr" style="${s};background:${g}"></i><span class="dur">${d}</span></div><div class="n">${n}</div><div class="m">${lang==="ru"?ru:en}</div></div>`}).join("");
+  lucide.createIcons();
+}
+document.getElementById("lang").onclick=e=>{e.stopPropagation();lang=lang==="ru"?"en":"ru";document.querySelector("#lang span").textContent=lang.toUpperCase();document.querySelectorAll("[data-i]").forEach(x=>x.textContent=lang==="ru"?RU[x.dataset.i]:(EN[x.dataset.i]||RU[x.dataset.i]));menu();render()};
+menu();render();
+if(location.hash==="#limits")document.getElementById("pop").classList.add("open");
+if(location.hash==="#menu")document.querySelector(".menu>div").classList.add("open");
+</script>
+</body>
+</html>

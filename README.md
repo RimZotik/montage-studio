@@ -5,7 +5,7 @@
 и терминале рядом, через инструменты студии; оба правят один и тот же файл проекта, ролик
 собирается рендером по нему.
 
-Статус: проектирование. Кода пока нет.
+Статус: проектирование, версии 0.Y; 1.0 — MVP. Кода пока нет.
 
 ## Документация
 
@@ -15,8 +15,9 @@
 | Компоненты: Claude Code, Node.js, движок рендера, ffmpeg | [docs/components.md](docs/components.md) |
 | Связь с Claude: чат, терминал, правила, инструменты | [docs/claude-bridge.md](docs/claude-bridge.md) |
 | Формат проекта и таймлайна | [docs/project-format.md](docs/project-format.md) |
+| Инструменты пользователя, библиотека, каталог | [docs/extensions.md](docs/extensions.md) |
 | Интерфейс: окно, меню, страницы, горячие клавиши | [docs/ui.md](docs/ui.md) |
 | Оформление: цвета, шрифты, элементы, анимации | [docs/design.md](docs/design.md) |
 | Порядок работ | [docs/roadmap.md](docs/roadmap.md) |
 
-Макет всех экранов — [design/mockups/studio.html](design/mockups/studio.html) (открыть в браузере).
+Макеты — `design/mockups/` (открыть в браузере): [главная](design/mockups/home.html). Остальные страницы — по мере работы над ними.

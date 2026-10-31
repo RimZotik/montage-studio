@@ -27,7 +27,10 @@
 ## Проверки
 
 - Rust: `cargo test`, `cargo clippy --all-targets -- -D warnings`.
-- Интерфейс: `npm run typecheck`, `npm run lint`, `npm test`.
+- Интерфейс: `npm run typecheck`, `npm test`; вид — `npm run dev` в браузере (образцы данных,
+  `src/shared/ipc/browserMock.ts`) или `npm run tauri dev`.
+- Скрытые правила для Claude — `src-tauri/resources/claude/core-rules.md` (английский, коротко;
+  пользователю не показываются, `docs/assistant-layer.md`).
 - Изменения интерфейса — смотреть запущенное приложение (снимок экрана), не только тесты.
 
 ## Документация

@@ -1,0 +1,21 @@
+/* Токены оформления (docs/design.md). Компоненты берут цвета только отсюда. */
+:root {
+  --bg: #ffffff;
+  --bar: #fbf9f7;
+  --hover: #f5f1ed;
+  --line: #ede8e3;
+  --text: #1f1a17;
+  --muted: #7a716b;
+  --faint: #b4aba4;
+  --accent: #f28a4b;
+  --accent-hover: #ec7d3b;
+  --accent-ink: #c9581c;
+  --accent-soft: #fff2e9;
+  --grad: linear-gradient(135deg, #ffffff 55%, #fff3ea 78%, #ffe1cc 100%);
+  --ok: #2e9e68;
+  --warn: #d99a1e;
+  --danger: #e5484d;
+  --shadow: 0 10px 30px rgba(60, 40, 20, 0.12);
+  --font: "Geist Sans", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+}

@@ -77,7 +77,7 @@
 
 ## Данные и хранение
 
-Токены — `src/shared/ui/tokens.css` (CSS-переменные), Tailwind читает их из темы.
+Токены — `src/shared/ui/tokens.css` (CSS-переменные), стили элементов — `src/shared/ui/app.css`.
 
 ## Правила
 

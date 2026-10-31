@@ -5,7 +5,13 @@
 и терминале рядом, через инструменты студии; оба правят один и тот же файл проекта, ролик
 собирается рендером по нему.
 
-Статус: проектирование, версии 0.Y; 1.0 — MVP. Кода пока нет.
+Статус: 0.1 — каркас и главная (проверка системы, проекты, лимиты Claude). Версии 0.Y; 1.0 — MVP.
+
+## Запуск
+
+- Приложение: `npm install`, затем `npm run tauri dev`.
+- Только интерфейс в браузере (образцы данных вместо ядра): `npm run dev`, открыть http://127.0.0.1:1430.
+- Проверки: `npm run typecheck`, `npm test`, в `src-tauri/` — `cargo test`, `cargo clippy --all-targets -- -D warnings`.
 
 ## Документация
 
@@ -13,7 +19,8 @@
 | --- | --- |
 | Устройство приложения, стек, папки | [docs/architecture.md](docs/architecture.md) |
 | Компоненты: Claude Code, Node.js, движок рендера, ffmpeg | [docs/components.md](docs/components.md) |
-| Связь с Claude: чат, терминал, правила, инструменты | [docs/claude-bridge.md](docs/claude-bridge.md) |
+| Связь с Claude: чат, терминал, лимиты, инструменты MCP | [docs/claude-bridge.md](docs/claude-bridge.md) |
+| Слой помощника: правила студии, память, карточки предложений | [docs/assistant-layer.md](docs/assistant-layer.md) |
 | Формат проекта и таймлайна | [docs/project-format.md](docs/project-format.md) |
 | Инструменты пользователя, библиотека, каталог | [docs/extensions.md](docs/extensions.md) |
 | Интерфейс: окно, меню, страницы, горячие клавиши | [docs/ui.md](docs/ui.md) |

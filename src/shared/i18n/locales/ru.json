@@ -1,6 +1,14 @@
 {
-  "app": { "title": "Montage Studio" },
-  "menu": { "file": "Файл", "edit": "Правка", "view": "Вид", "window": "Окно", "help": "Справка" },
+  "app": {
+    "title": "Montage Studio"
+  },
+  "menu": {
+    "file": "Файл",
+    "edit": "Правка",
+    "view": "Вид",
+    "window": "Окно",
+    "help": "Справка"
+  },
   "cmd": {
     "newProject": "Новый проект",
     "openProject": "Открыть папку проекта…",
@@ -16,10 +24,18 @@
     "library": "Библиотека",
     "undo": "Отменить",
     "redo": "Повторить",
-    "reload": "Перезагрузить окно"
+    "reload": "Перезагрузить окно",
+    "checkUpdates": "Проверить обновления",
+    "installUpdate": "Установить обновление"
   },
-  "tabs": { "home": "Главная", "projects": "Проекты", "library": "Библиотека" },
-  "search": { "projects": "Поиск проектов" },
+  "tabs": {
+    "home": "Главная",
+    "projects": "Проекты",
+    "library": "Библиотека"
+  },
+  "search": {
+    "projects": "Поиск проектов"
+  },
   "limits": {
     "session": "Сессия",
     "week": "Неделя",
@@ -94,8 +110,13 @@
     "create": "Создать",
     "cancel": "Отмена"
   },
-  "palette": { "placeholder": "Команда…", "empty": "Ничего не найдено" },
-  "soon": { "page": "Эта страница появится в одной из следующих версий." },
+  "palette": {
+    "placeholder": "Команда…",
+    "empty": "Ничего не найдено"
+  },
+  "soon": {
+    "page": "Эта страница появится в одной из следующих версий."
+  },
   "error": {
     "notProject": "В папке нет project.json — это не проект студии.",
     "badProject": "project.json проекта поврежден.",
@@ -105,5 +126,26 @@
     "claudeNoLimits": "Claude Code не прислал лимиты — проверьте, что вход выполнен по подписке.",
     "claudeStart": "Не удалось запустить Claude Code.",
     "unknown": "Что-то пошло не так: {{message}}"
+  },
+  "install": {
+    "install": "Установить · {{mb}} МБ",
+    "update": "Обновить",
+    "version": "Версия {{version}}",
+    "cancel": "Отменить",
+    "verify": "проверка",
+    "extract": "распаковка",
+    "download": "загрузка",
+    "error": {
+      "network": "Не удалось скачать — проверьте сеть и повторите.",
+      "checksum": "Файл скачался поврежденным — повторите.",
+      "badArchive": "Архив не распаковался — повторите.",
+      "io": "Не удалось записать файлы на диск.",
+      "other": "Установка не удалась — повторите."
+    },
+    "withFfmpeg": "входит в ffmpeg"
+  },
+  "update": {
+    "install": "Обновить до {{version}}",
+    "downloading": "Загрузка обновления {{version}}: {{pct}}%"
   }
 }

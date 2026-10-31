@@ -2,13 +2,13 @@ import { appLogDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleX, Command as CommandIcon, FileText, FolderOpen, Gauge, Languages, LogOut, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderOpen, Gauge, Languages, LogOut, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NewProjectDialog } from "@/pages/Home/NewProjectDialog";
 import { Home } from "@/pages/Home/Home";
 import { pickLanguage } from "@/shared/i18n";
-import { type AppError, type Limits, type ProjectSummary, type Settings, type SystemReport, commands as ipc } from "@/shared/ipc/bindings";
+import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
 import { LimitsIndicator } from "./Limits";
@@ -30,6 +30,8 @@ export function App() {
   const [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<"new" | "palette" | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [installs, setInstalls] = useState<Partial<Record<ComponentId, ComponentProgress>>>({});
+  const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
   const toast = useCallback((text: string, error = false) => {
     const id = Date.now() + Math.random();
@@ -74,7 +76,30 @@ export function App() {
     })();
     void loadProjects();
     void check();
+    void ipc.updateStatus().then(setUpdate);
   }, [check, loadProjects, i18n]);
+
+  // Ход установки компонентов; конец — перепроверка системы.
+  useEffect(() => {
+    const off = events.componentProgress.listen(({ payload }) => {
+      setInstalls((all) => ({ ...all, [payload.id]: payload }));
+      if (payload.phase === "done") void check();
+    });
+    const offUpdate = events.updateChanged.listen(({ payload }) => setUpdate(payload));
+    return () => {
+      void off.then((f) => f());
+      void offUpdate.then((f) => f());
+    };
+  }, [check]);
+
+  const install = useCallback(
+    async (id: ComponentId) => {
+      setInstalls((all) => ({ ...all, [id]: { id, phase: "download", received: 0, total: 1, error: null } }));
+      const r = await ipc.componentInstall(id);
+      if (r.status === "error") fail(r.error);
+    },
+    [fail],
+  );
 
   const openProject = useCallback(
     async (path: string) => {
@@ -113,9 +138,11 @@ export function App() {
       { id: "refreshChecks", label: "cmd.refreshChecks", icon: RefreshCw, keys: "F5", run: () => void check() },
       { id: "refreshLimits", label: "cmd.refreshLimits", icon: Gauge, run: () => void refreshLimits() },
       { id: "openLogs", label: "cmd.openLogs", icon: FileText, run: () => void appLogDir().then((d) => revealItemInDir(d)) },
+      { id: "checkUpdates", label: "cmd.checkUpdates", icon: Download, run: () => void ipc.updateCheckNow() },
+      { id: "installUpdate", label: "cmd.installUpdate", icon: Download, enabled: () => update?.phase === "ready", run: () => void ipc.updateInstall().then((r) => r.status === "error" && fail(r.error)) },
       { id: "quit", label: "cmd.quit", icon: LogOut, keys: "Alt+F4", run: () => void getCurrentWindow().close() },
     ],
-    [check, openFolder, refreshLimits, toggleLanguage],
+    [check, fail, openFolder, refreshLimits, toggleLanguage, update?.phase],
   );
   const byId = useMemo(() => new Map(commandList.map((c) => [c.id, c])), [commandList]);
 
@@ -124,7 +151,7 @@ export function App() {
     { id: "edit", label: "menu.edit", items: ["undo", "redo", "-", "palette"] },
     { id: "view", label: "menu.view", items: ["home", "projects", "library", "-", "language", "reload"] },
     { id: "window", label: "menu.window", items: ["refreshChecks", "refreshLimits"] },
-    { id: "help", label: "menu.help", items: ["openLogs"] },
+    { id: "help", label: "menu.help", items: ["checkUpdates", "installUpdate", "-", "openLogs"] },
   ];
 
   useEffect(() => {
@@ -167,6 +194,12 @@ export function App() {
             <Search size={14} strokeWidth={1.75} />
             <input placeholder={t("search.projects")} value={query} onChange={(e) => setQuery(e.target.value)} />
           </label>
+          {update?.phase === "ready" && update.version && (
+            <button className="btn" title={update.notes ?? undefined} onClick={() => byId.get("installUpdate")?.run()}>
+              <Download size={14} strokeWidth={1.75} />
+              {t("update.install", { version: update.version })}
+            </button>
+          )}
           <LimitsIndicator limits={limits} refreshing={limitsBusy} onRefresh={() => void refreshLimits()} />
           <button className="btn pri" onClick={() => setDialog("new")}>
             <Plus size={14} strokeWidth={2} />
@@ -179,6 +212,9 @@ export function App() {
         <Home
           report={report}
           checking={checking}
+          installs={installs}
+          onInstall={(id) => void install(id)}
+          onCancelInstall={(id) => void ipc.componentCancel(id)}
           projects={projects}
           query={query}
           onNew={() => setDialog("new")}
@@ -203,6 +239,12 @@ export function App() {
           <span className="ic warn">
             <TriangleAlert size={12} strokeWidth={1.75} />
             {t("status.missingCount", { list: missing.map((x) => t(`tool.${x.id}`)).join(", ") })}
+          </span>
+        )}
+        {update?.phase === "downloading" && (
+          <span className="ic">
+            <Download size={12} strokeWidth={1.75} />
+            {t("update.downloading", { version: update.version, pct: Math.round((update.progress ?? 0) * 100) })}
           </span>
         )}
         {claude && <span className="ic">{claude.version ? t("status.claude", { version: claude.version }) : t("status.noClaude")}</span>}

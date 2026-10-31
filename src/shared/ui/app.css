@@ -168,3 +168,9 @@ input { font: inherit; color: inherit; }
 
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Установка компонентов в «Готовности» */
+.readyrow .bar { margin: -2px 0 4px 22px; }
+.inst { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.inst .v { margin-left: 0; }
+.ierr { font-size: 11px; color: var(--danger); margin: -2px 0 4px 22px; line-height: 1.35; }

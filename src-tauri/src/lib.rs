@@ -3,15 +3,21 @@
 
 mod checks;
 mod claude_limits;
+mod components;
 mod db;
 mod error;
 mod ipc;
 mod projects;
 mod settings;
+mod updates;
+
+use std::sync::Arc;
 
 use tauri::Manager;
 
 pub fn run() {
+    // Паника в любом потоке — в журнал (иначе в выпуске без консоли ее не увидеть).
+    std::panic::set_hook(Box::new(|info| log::error!("panic: {info}")));
     let ipc = ipc::builder();
     #[cfg(debug_assertions)]
     ipc::export_bindings(&ipc);
@@ -33,14 +39,20 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(ipc.invoke_handler())
+        .manage(components::Installs::default())
+        .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
             ipc.mount_events(app);
+            // TLS для загрузок — на ring (один раз на процесс).
+            let _ = rustls::crypto::ring::default_provider().install_default();
             let config = app.path().app_config_dir()?;
             std::fs::create_dir_all(&config)?;
             app.manage(settings::SettingsState::load(config.join("settings.json")));
             app.manage(db::Db::open(&config.join("studio.db")).map_err(|e| e.message)?);
             log::info!("Montage Studio {} started; config={}", app.package_info().version, config.display());
+            updates::start(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

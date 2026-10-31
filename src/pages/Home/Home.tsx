@@ -1,8 +1,8 @@
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleAlert, CircleCheck, CircleX, FolderOpen, FolderX, LayoutTemplate, Plus, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { CircleAlert, CircleCheck, CircleX, Download, FolderOpen, FolderX, LayoutTemplate, Plus, RefreshCw, X } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ProjectSummary, SystemReport, ToolStatus } from "@/shared/ipc/bindings";
+import type { ComponentId, ComponentProgress, ProjectSummary, SystemReport, ToolStatus } from "@/shared/ipc/bindings";
 import { aspect, shortDate } from "@/shared/lib/format";
 
 const INSTALL: Record<ToolStatus["id"], string> = {
@@ -26,6 +26,9 @@ type Filter = "all" | "9:16" | "16:9" | "1:1";
 export type HomeProps = {
   report: SystemReport | null;
   checking: boolean;
+  installs: Partial<Record<ComponentId, ComponentProgress>>;
+  onInstall: (id: ComponentId) => void;
+  onCancelInstall: (id: ComponentId) => void;
   projects: ProjectSummary[];
   query: string;
   onNew: () => void;
@@ -35,22 +38,61 @@ export type HomeProps = {
   onRecheck: () => void;
 };
 
-function ReadyRow({ tool }: { tool: ToolStatus }) {
+type RowProps = { tool: ToolStatus; progress?: ComponentProgress; onInstall: (id: ComponentId) => void; onCancel: (id: ComponentId) => void };
+
+/** Строка готовности: версия; нет — «Установить» (компонент) или «Как установить» (Claude Code);
+ *  идет установка — ход и отмена. ffmpeg и ffprobe — один компонент. */
+function ReadyRow({ tool, progress, onInstall, onCancel }: RowProps) {
   const { t } = useTranslation();
   const state = !tool.found ? "miss" : tool.error ? "err" : "ok";
   const Icon = state === "ok" ? CircleCheck : state === "err" ? CircleX : CircleAlert;
   const value = state === "ok" ? tool.version : state === "err" ? t("tool.broken") : null;
-  return (
-    <div className={`ready ${state}`} title={tool.path ?? tool.error ?? undefined}>
-      <Icon size={14} strokeWidth={1.75} />
-      <span>{t(`tool.${tool.id}`)}</span>
-      {value ? (
-        <span className="v">{value}</span>
-      ) : (
-        <button className="link" style={{ marginLeft: "auto" }} onClick={() => void openUrl(INSTALL[tool.id])}>
-          {t("home.install")}
+  const running = progress && (progress.phase === "download" || progress.phase === "verify" || progress.phase === "extract");
+  const failed = progress?.phase === "error";
+  const pct = progress && progress.total > 0 ? Math.round((progress.received / progress.total) * 100) : 0;
+  const component = tool.component;
+
+  let action: ReactNode = null;
+  if (running && component) {
+    action = (
+      <span className="inst">
+        <span className="v">{progress.phase === "download" ? `${pct}%` : t(`install.${progress.phase}`)}</span>
+        <button className="iconbtn" title={t("install.cancel")} onClick={() => onCancel(component)}>
+          <X size={12} strokeWidth={1.75} />
         </button>
+      </span>
+    );
+  } else if (tool.id === "ffprobe" && component && state !== "ok") {
+    // Ставится вместе с ffmpeg — одна кнопка на строке ffmpeg.
+    action = <span className="v">{t("install.withFfmpeg")}</span>;
+  } else if (component && (state !== "ok" || tool.outdated)) {
+    action = (
+      <button className="link inst" onClick={() => onInstall(component)} title={tool.latest ? t("install.version", { version: tool.latest }) : undefined}>
+        <Download size={12} strokeWidth={1.75} />
+        {tool.outdated && state === "ok" ? t("install.update") : t("install.install", { mb: tool.downloadMb ?? 0 })}
+      </button>
+    );
+  } else if (state !== "ok") {
+    action = (
+      <button className="link inst" onClick={() => void openUrl(INSTALL[tool.id])}>
+        {t("home.install")}
+      </button>
+    );
+  }
+
+  return (
+    <div className="readyrow">
+      <div className={`ready ${state}`} title={tool.path ?? tool.error ?? undefined}>
+        <Icon size={14} strokeWidth={1.75} />
+        <span>{t(`tool.${tool.id}`)}</span>
+        {action ?? <span className="v">{value}</span>}
+      </div>
+      {running && (
+        <div className="bar">
+          <i style={{ width: `${progress.phase === "download" ? pct : 100}%` }} />
+        </div>
       )}
+      {failed && <div className="ierr">{t(`install.error.${progress.error ?? "other"}`, { defaultValue: t("install.error.other") })}</div>}
     </div>
   );
 }
@@ -92,7 +134,11 @@ export function Home(props: HomeProps) {
             <RefreshCw size={13} strokeWidth={1.75} className={props.checking ? "spin" : ""} />
           </button>
         </div>
-        {props.report ? props.report.tools.map((tool) => <ReadyRow key={tool.id} tool={tool} />) : <div className="ready muted">{t("home.checking")}</div>}
+        {props.report ? (
+          props.report.tools.map((tool) => <ReadyRow key={tool.id} tool={tool} progress={tool.component ? props.installs[tool.component] : undefined} onInstall={props.onInstall} onCancel={props.onCancelInstall} />)
+        ) : (
+          <div className="ready muted">{t("home.checking")}</div>
+        )}
         {hw && (
           <div className="hw">
             {t("home.hw", { cpu: hw.cpu, threads: hw.threads, memory: hw.memoryGb })}

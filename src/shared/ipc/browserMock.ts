@@ -10,10 +10,10 @@ const DATA: Record<string, unknown> = {
   settings_update: null,
   system_check: {
     tools: [
-      { id: "claude", found: true, version: "2.1.316", path: "C:\\Users\\user\\.local\\bin\\claude.exe", source: "system", error: null },
-      { id: "node", found: true, version: "24.18.0", path: "C:\\Program Files\\nodejs\\node.exe", source: "system", error: null },
-      { id: "ffmpeg", found: false, version: null, path: null, source: null, error: null },
-      { id: "ffprobe", found: false, version: null, path: null, source: null, error: null },
+      { id: "claude", found: true, version: "2.1.316", path: "C:\\Users\\user\\.local\\bin\\claude.exe", source: "system", error: null, component: null, latest: null, outdated: false, downloadMb: null },
+      { id: "node", found: true, version: "24.18.0", path: "C:\\Program Files\\nodejs\\node.exe", source: "system", error: null, component: "node", latest: "24.22.2", outdated: false, downloadMb: 37 },
+      { id: "ffmpeg", found: false, version: null, path: null, source: null, error: null, component: "ffmpeg", latest: "9.0.2", outdated: false, downloadMb: 96 },
+      { id: "ffprobe", found: false, version: null, path: null, source: null, error: null, component: "ffmpeg", latest: "9.0.2", outdated: false, downloadMb: 96 },
     ],
     hardware: { cpu: "AMD Ryzen 7 7800X3D 8-Core Processor", threads: 16, memoryGb: 32, gpus: ["NVIDIA GeForce RTX 4070"] },
   },
@@ -32,14 +32,49 @@ const DATA: Record<string, unknown> = {
   },
 };
 
+const callbacks = new Map<number, (payload: unknown) => void>();
+const listeners = new Map<string, number[]>();
+
+function emit(event: string, payload: unknown) {
+  for (const id of listeners.get(event) ?? []) callbacks.get(id)?.({ event, id, payload });
+}
+
+/** Имитация установки компонента: загрузка по шагам, затем проверка. */
+function fakeInstall(id: string) {
+  const total = id === "node" ? 37_754_834 : 99_899_672;
+  let received = 0;
+  const timer = setInterval(() => {
+    received = Math.min(total, received + total / 25);
+    emit("component-progress", { id, phase: received < total ? "download" : "verify", received, total, error: null });
+    if (received >= total) clearInterval(timer);
+  }, 200);
+}
+
 export function installBrowserMock() {
   const w = window as unknown as Record<string, unknown>;
   if ("__TAURI_INTERNALS__" in w) return;
+  let next = 1;
   w.__TAURI_INTERNALS__ = {
     metadata: { currentWindow: { label: "main" }, currentWebview: { windowLabel: "main", label: "main" } },
-    transformCallback: () => 0,
+    transformCallback: (cb: (payload: unknown) => void) => {
+      const id = next++;
+      callbacks.set(id, cb);
+      return id;
+    },
     invoke: async (cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "plugin:event|listen") {
+        const event = String(args?.event);
+        listeners.set(event, [...(listeners.get(event) ?? []), Number(args?.handler)]);
+        return Number(args?.handler);
+      }
+      if (cmd === "component_install") {
+        fakeInstall(String(args?.id));
+        return null;
+      }
+      if (cmd === "update_status") return { version: "0.2.0", notes: null, phase: "ready", progress: 1 };
       if (cmd === "settings_update") return args?.value;
+      // `#install` в адресе — сразу показать ход установки ffmpeg (для снимков).
+      if (cmd === "system_check" && location.hash === "#install") setTimeout(() => fakeInstall("ffmpeg"), 300);
       if (cmd === "claude_limits_refresh") return DATA.claude_limits_last;
       if (cmd in DATA) return structuredClone(DATA[cmd]);
       return null;

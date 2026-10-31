@@ -9,6 +9,7 @@ use serde::Serialize;
 use specta::Type;
 use tauri::{AppHandle, Manager};
 
+use crate::components::{self, ComponentId};
 use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, Copy, Serialize, Type, PartialEq, Eq)]
@@ -39,6 +40,14 @@ pub struct ToolStatus {
     pub source: Option<ToolSource>,
     /// Файл есть, но не запустился (текст ошибки).
     pub error: Option<String>,
+    /// Компонент, который ставит эту программу (у Claude Code — нет).
+    pub component: Option<ComponentId>,
+    /// Закрепленная версия компонента.
+    pub latest: Option<String>,
+    /// Стоит из папки компонентов, но старее закрепленной.
+    pub outdated: bool,
+    /// Размер загрузки компонента, МБ.
+    pub download_mb: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -109,19 +118,30 @@ fn locate(spec: &Spec, components: &Path) -> Option<(PathBuf, ToolSource)> {
     which::which(spec.exe).ok().map(|p| (p, ToolSource::System))
 }
 
+fn component_of(id: ToolId) -> Option<ComponentId> {
+    match id {
+        ToolId::Claude => None,
+        ToolId::Node => Some(ComponentId::Node),
+        ToolId::Ffmpeg | ToolId::Ffprobe => Some(ComponentId::Ffmpeg),
+    }
+}
+
 fn check(spec: &Spec, components: &Path) -> ToolStatus {
-    let Some((path, source)) = locate(spec, components) else {
-        return ToolStatus { id: spec.id, found: false, version: None, path: None, source: None, error: None };
-    };
-    let shown = Some(path.display().to_string());
+    let component = component_of(spec.id);
+    let latest = component.map(|c| components::manifest(c).version.to_owned());
+    let download_mb = component.map(|c| u32::try_from(components::manifest(c).size.div_ceil(1 << 20)).unwrap_or(0));
+    let base = ToolStatus { id: spec.id, found: false, version: None, path: None, source: None, error: None, component, latest: latest.clone(), outdated: false, download_mb };
+    let Some((path, source)) = locate(spec, components) else { return base };
+    let outdated = source == ToolSource::Components && component.is_some_and(|c| components::installed_version(components, c) != latest);
+    let base = ToolStatus { found: true, path: Some(path.display().to_string()), source: Some(source), outdated, ..base };
     match quiet(Command::new(&path).arg(spec.version_arg)).output() {
         Ok(out) => {
             let text = String::from_utf8_lossy(if out.stdout.is_empty() { &out.stderr } else { &out.stdout }).into_owned();
             let version = parse_version(spec.id, &text);
             let error = (!out.status.success() || version.is_none()).then(|| text.lines().next().unwrap_or("no output").to_owned());
-            ToolStatus { id: spec.id, found: true, version, path: shown, source: Some(source), error }
+            ToolStatus { version, error, ..base }
         }
-        Err(e) => ToolStatus { id: spec.id, found: true, version: None, path: shown, source: Some(source), error: Some(e.to_string()) },
+        Err(e) => ToolStatus { error: Some(e.to_string()), ..base },
     }
 }
 

@@ -1,6 +1,14 @@
 {
-  "app": { "title": "Montage Studio" },
-  "menu": { "file": "File", "edit": "Edit", "view": "View", "window": "Window", "help": "Help" },
+  "app": {
+    "title": "Montage Studio"
+  },
+  "menu": {
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "help": "Help"
+  },
   "cmd": {
     "newProject": "New project",
     "openProject": "Open project folder…",
@@ -16,10 +24,18 @@
     "library": "Library",
     "undo": "Undo",
     "redo": "Redo",
-    "reload": "Reload window"
+    "reload": "Reload window",
+    "checkUpdates": "Check for updates",
+    "installUpdate": "Install update"
   },
-  "tabs": { "home": "Home", "projects": "Projects", "library": "Library" },
-  "search": { "projects": "Search projects" },
+  "tabs": {
+    "home": "Home",
+    "projects": "Projects",
+    "library": "Library"
+  },
+  "search": {
+    "projects": "Search projects"
+  },
   "limits": {
     "session": "Session",
     "week": "Week",
@@ -94,8 +110,13 @@
     "create": "Create",
     "cancel": "Cancel"
   },
-  "palette": { "placeholder": "Command…", "empty": "Nothing found" },
-  "soon": { "page": "This page arrives in one of the next versions." },
+  "palette": {
+    "placeholder": "Command…",
+    "empty": "Nothing found"
+  },
+  "soon": {
+    "page": "This page arrives in one of the next versions."
+  },
   "error": {
     "notProject": "The folder has no project.json — it is not a studio project.",
     "badProject": "The project's project.json is damaged.",
@@ -105,5 +126,26 @@
     "claudeNoLimits": "Claude Code reported no limits — make sure you are signed in with a subscription.",
     "claudeStart": "Could not start Claude Code.",
     "unknown": "Something went wrong: {{message}}"
+  },
+  "install": {
+    "install": "Install · {{mb}} MB",
+    "update": "Update",
+    "version": "Version {{version}}",
+    "cancel": "Cancel",
+    "verify": "verifying",
+    "extract": "unpacking",
+    "download": "downloading",
+    "error": {
+      "network": "Download failed — check the connection and retry.",
+      "checksum": "The file arrived damaged — retry.",
+      "badArchive": "The archive did not unpack — retry.",
+      "io": "Could not write files to disk.",
+      "other": "Installation failed — retry."
+    },
+    "withFfmpeg": "comes with ffmpeg"
+  },
+  "update": {
+    "install": "Update to {{version}}",
+    "downloading": "Downloading update {{version}}: {{pct}}%"
   }
 }

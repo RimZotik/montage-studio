@@ -1,8 +1,8 @@
 //! Команды для интерфейса (tauri-specta): список и выгрузка типов в `src/shared/ipc/bindings.ts`.
 
-use tauri_specta::{Builder, collect_commands};
+use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{checks, claude_limits, projects, settings};
+use crate::{checks, claude_limits, components, projects, settings, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -18,7 +18,13 @@ pub fn builder() -> Builder<tauri::Wry> {
         projects::project_forget,
         claude_limits::claude_limits_last,
         claude_limits::claude_limits_refresh,
+        components::component_install,
+        components::component_cancel,
+        updates::update_status,
+        updates::update_check_now,
+        updates::update_install,
     ])
+    .events(collect_events![components::ComponentProgress, updates::UpdateChanged])
 }
 
 #[cfg(any(debug_assertions, test))]

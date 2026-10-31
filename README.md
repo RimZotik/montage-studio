@@ -5,7 +5,7 @@
 и терминале рядом, через инструменты студии; оба правят один и тот же файл проекта, ролик
 собирается рендером по нему.
 
-Статус: 0.1 — каркас и главная (проверка системы, проекты, лимиты Claude). Версии 0.Y; 1.0 — MVP.
+Статус: 0.2 — каркас, главная, установка компонентов одной кнопкой, тихие обновления. Версии 0.Y; 1.0 — MVP.
 
 ## Запуск
 
@@ -19,6 +19,7 @@
 | --- | --- |
 | Устройство приложения, стек, папки | [docs/architecture.md](docs/architecture.md) |
 | Компоненты: Claude Code, Node.js, движок рендера, ffmpeg | [docs/components.md](docs/components.md) |
+| Обновления приложения и выпуск версии | [docs/updates.md](docs/updates.md) |
 | Связь с Claude: чат, терминал, лимиты, инструменты MCP | [docs/claude-bridge.md](docs/claude-bridge.md) |
 | Слой помощника: правила студии, память, карточки предложений | [docs/assistant-layer.md](docs/assistant-layer.md) |
 | Формат проекта и таймлайна | [docs/project-format.md](docs/project-format.md) |

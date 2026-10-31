@@ -1,7 +1,8 @@
-import { Clapperboard, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ProjectView, Sequence } from "@/shared/ipc/bindings";
+import type { AppError, ProjectView, Sequence } from "@/shared/ipc/bindings";
+import { MediaColumn } from "./MediaColumn";
+import { RulesColumn } from "./RulesColumn";
 
 const PRESETS: { key: string; width: number; height: number }[] = [
   { key: "vertical", width: 1080, height: 1920 },
@@ -27,8 +28,10 @@ function NumberField({ value, suffix, onCommit }: { value: number; suffix: strin
   );
 }
 
-/** «Подготовка» (0.3): последовательность и имя проекта с отменой; медиа и правила — в 0.5. */
-export function Prepare({ view, onSequence, onRename }: { view: ProjectView; onSequence: (s: Sequence) => void; onRename: (name: string) => void }) {
+type Props = { view: ProjectView; onSequence: (s: Sequence) => void; onRename: (name: string) => void; onError: (e: AppError) => void; onImported: (n: number) => void; rulesKey: number };
+
+/** «Подготовка»: медиа проекта, правила для Claude, имя и последовательность (с отменой). */
+export function Prepare({ view, onSequence, onRename, onError, onImported, rulesKey }: Props) {
   const { t } = useTranslation();
   const seq = view.project.sequence;
   const [name, setName] = useState(view.project.name);
@@ -39,21 +42,8 @@ export function Prepare({ view, onSequence, onRename }: { view: ProjectView; onS
 
   return (
     <div className="prepare">
-      <section className="col media">
-        <div className="colhead">{t("prepare.media")}</div>
-        <div className="placeholder">
-          <Clapperboard size={20} strokeWidth={1.5} />
-          {t("prepare.mediaSoon")}
-        </div>
-      </section>
-
-      <section className="col rules">
-        <div className="colhead">{t("prepare.rules")}</div>
-        <div className="placeholder">
-          <ScrollText size={20} strokeWidth={1.5} />
-          {t("prepare.rulesSoon")}
-        </div>
-      </section>
+      <MediaColumn projectPath={view.path} onError={onError} onImported={onImported} />
+      <RulesColumn onError={onError} reloadKey={rulesKey} />
 
       <section className="col seq">
         <div className="colhead">{t("prepare.project")}</div>

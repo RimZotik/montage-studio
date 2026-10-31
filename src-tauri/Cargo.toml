@@ -1,6 +1,6 @@
 [package]
 name = "montage-studio"
-version = "0.3.0"
+version = "0.5.0"
 description = "Video editing studio with Claude Code"
 edition = "2024"
 publish = false
@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-dialog = "2"

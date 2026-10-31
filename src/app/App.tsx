@@ -2,13 +2,14 @@ import { appLogDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderClosed, FolderOpen, Gauge, Languages, LogOut, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderClosed, FolderOpen, Gauge, Languages, LogOut, MessageSquare, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NewProjectDialog } from "@/pages/Home/NewProjectDialog";
 import { Home } from "@/pages/Home/Home";
 import { Prepare } from "@/pages/Project/Prepare";
 import { Projects } from "@/pages/Projects/Projects";
+import { ChatPanel } from "@/panels/Claude/ChatPanel";
 import { pickLanguage } from "@/shared/i18n";
 import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type ProjectView, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
@@ -43,6 +44,8 @@ export function App() {
   const [project, setProject] = useState<ProjectView | null>(null);
   const [limitsLoaded, setLimitsLoaded] = useState(false);
   const [autoLimits, setAutoLimits] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [rulesKey, setRulesKey] = useState(0);
 
   const toast = useCallback((text: string, error = false) => {
     const id = Date.now() + Math.random();
@@ -106,7 +109,15 @@ export function App() {
   // Открытый проект меняет только ядро — сюда приходит его новое состояние.
   useEffect(() => {
     const off = events.projectChanged.listen(({ payload }) => setProject(payload));
-    return () => void off.then((f) => f());
+    // Лимиты приходят с каждым ответом Claude в чате.
+    const offLimits = events.limitsChanged.listen(({ payload }) => setLimits(payload));
+    // После ответа Claude правила проекта могли измениться — перечитать.
+    const offTurn = events.chatEvent.listen(({ payload }) => payload.kind === "turn" && setRulesKey((k) => k + 1));
+    return () => {
+      void off.then((f) => f());
+      void offLimits.then((f) => f());
+      void offTurn.then((f) => f());
+    };
   }, []);
 
   // Ход установки компонентов; конец — перепроверка системы.
@@ -170,6 +181,7 @@ export function App() {
       { id: "closeProject", label: "cmd.closeProject", icon: FolderClosed, keys: "Ctrl+W", enabled: () => !!project, run: () => void closeProject() },
       { id: "undo", label: "cmd.undo", icon: Undo2, keys: "Ctrl+Z", enabled: () => !!project?.canUndo, run: () => void ipc.projectUndo().then(edited) },
       { id: "redo", label: "cmd.redo", icon: Redo2, keys: "Ctrl+Shift+Z", enabled: () => !!project?.canRedo, run: () => void ipc.projectRedo().then(edited) },
+      { id: "chat", label: "cmd.chat", icon: MessageSquare, keys: "Ctrl+L", enabled: () => !!project, run: () => setChatOpen((o) => !o) },
       { id: "palette", label: "cmd.palette", icon: CommandIcon, keys: "Ctrl+Shift+P", run: () => setDialog("palette") },
       ...[0, 1, 2].map((i) => ({
         id: `tab${i + 1}`,
@@ -194,7 +206,7 @@ export function App() {
     { id: "file", label: "menu.file", items: ["newProject", "openProject", "closeProject", "-", "quit"] },
     { id: "edit", label: "menu.edit", items: ["undo", "redo", "-", "palette"] },
     { id: "view", label: "menu.view", items: ["tab1", "tab2", "tab3", "-", "language", "reload"] },
-    { id: "window", label: "menu.window", items: ["refreshChecks", "refreshLimits"] },
+    { id: "window", label: "menu.window", items: ["chat", "-", "refreshChecks", "refreshLimits"] },
     { id: "help", label: "menu.help", items: ["checkUpdates", "installUpdate", "-", "openLogs"] },
   ];
 
@@ -266,10 +278,22 @@ export function App() {
         </div>
       </div>
 
-      {project && tab === "prepare" ? (
-        <Prepare view={project} onSequence={(sequence) => void ipc.projectSetSequence(sequence).then(edited)} onRename={(name) => void ipc.projectRename(name).then(edited)} />
-      ) : project ? (
-        <div className="soon">{t(`soon.${tab}`)}</div>
+      {project ? (
+        <div className="workspace">
+          {tab === "prepare" ? (
+            <Prepare
+              view={project}
+              onSequence={(sequence) => void ipc.projectSetSequence(sequence).then(edited)}
+              onRename={(name) => void ipc.projectRename(name).then(edited)}
+              onError={fail}
+              onImported={(n) => toast(t("prepare.imported", { count: n }))}
+              rulesKey={rulesKey}
+            />
+          ) : (
+            <div className="soon">{t(`soon.${tab}`)}</div>
+          )}
+          {chatOpen && <ChatPanel projectPath={project.path} onError={fail} />}
+        </div>
       ) : tab === "projects" ? (
         <Projects projects={projects} query={query} onOpen={(p) => void openProject(p.path)} onForget={(p) => void ipc.projectForget(p.path).then(loadProjects)} />
       ) : tab === "home" ? (

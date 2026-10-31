@@ -50,11 +50,32 @@ export const commands = {
 	projectRename: (name: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_rename", { name })),
 	projectUndo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo")),
 	projectRedo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_redo")),
+	/**
+	 *  Отправить сообщение. `kind` — `user` или `decision` (ответ на карточку: в чате показывается
+	 *  отметкой на карточке, а не сообщением).
+	 */
+	chatSend: (text: string, kind: string) => typedError<null, AppError>(__TAURI_INVOKE("chat_send", { text, kind })),
+	/**  Прервать ответ (процесс останавливается; следующее сообщение продолжит ту же сессию). */
+	chatStop: () => __TAURI_INVOKE<void>("chat_stop"),
+	/**  Начать новый разговор: прошлая история — в архив проекта. */
+	chatNewSession: () => typedError<null, AppError>(__TAURI_INVOKE("chat_new_session")),
+	/**  История чата открытого проекта (последние строки). */
+	chatHistory: () => __TAURI_INVOKE<ChatItem[]>("chat_history"),
+	/**  Идет ли ответ сейчас. */
+	chatBusy: () => __TAURI_INVOKE<boolean>("chat_busy"),
+	mediaList: () => typedError<MediaItem[], AppError>(__TAURI_INVOKE("media_list")),
+	mediaImport: (files: string[]) => typedError<number, AppError>(__TAURI_INVOKE("media_import", { files })),
+	/**  Перенести файл в другую категорию (например, звук → голос). */
+	mediaMove: (path: string, category: string) => typedError<null, AppError>(__TAURI_INVOKE("media_move", { path, category })),
+	rulesRead: () => typedError<RuleFile[], AppError>(__TAURI_INVOKE("rules_read")),
+	rulesWrite: (name: string, text: string) => typedError<null, AppError>(__TAURI_INVOKE("rules_write", { name, text })),
 };
 
 /** Events */
 export const events = {
+	chatEvent: makeEvent<ChatEvent>("chat-event"),
 	componentProgress: makeEvent<ComponentProgress>("component-progress"),
+	limitsChanged: makeEvent<LimitsChanged>("limits-changed"),
 	projectChanged: makeEvent<ProjectChanged>("project-changed"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
@@ -63,6 +84,28 @@ export const events = {
 export type AppError = {
 	code: string,
 	message: string,
+};
+
+export type ChatEvent = 
+/**  Модель ответила впервые в процессе. */
+{ kind: "ready"; model: string } | 
+/**  Кусок текста ответа (печатается по мере прихода). */
+{ kind: "delta"; text: string } | 
+/**  Готовый текст сообщения (заменяет собранные куски). */
+{ kind: "assistant"; text: string } | 
+/**  Вызов инструмента: имя и коротко, над чем. */
+{ kind: "tool"; id: string; name: string; summary: string } | { kind: "toolDone"; id: string; error: boolean } | 
+/**  Итог хода. */
+{ kind: "turn"; ok: boolean; interrupted: boolean; durationMs: number; inputTokens: number; outputTokens: number; costUsd: number | null; 
+/**  Запрещенные действия (инструмент и над чем). */
+denials: string[] };
+
+/**  Строка истории чата для показа (`.studio/claude/chat.jsonl`). */
+export type ChatItem = {
+	/**  `user`, `assistant`, `tool`, `turn`, `decision`, `error`. */
+	role: string,
+	text: string,
+	at: number,
 };
 
 export type ComponentId = "node" | "ffmpeg";
@@ -99,6 +142,20 @@ export type Limits = {
 	sevenDay: LimitWindow | null,
 };
 
+/**  Лимиты обновились (из чата или по кнопке). */
+export type LimitsChanged = Limits;
+
+export type MediaItem = {
+	/**  Путь внутри проекта: `media/footage/clip.mp4`. */
+	path: string,
+	name: string,
+	category: string,
+	size: number,
+	probe: Probe | null,
+	/**  Миниатюра (полный путь к jpg в кэше проекта). */
+	thumb: string | null,
+};
+
 export type NewProject = {
 	name: string,
 	/**  Папка, в которой появится папка проекта. */
@@ -110,6 +167,14 @@ export type NewProject = {
 export type Phase = "download" | "verify" | "extract" | "done" | "error" | "cancelled";
 
 export type Preset = "vertical" | "horizontal" | "square";
+
+export type Probe = {
+	durationS: number | null,
+	width: number | null,
+	height: number | null,
+	audio: boolean,
+	video: boolean,
+};
 
 export type ProjectChanged = ProjectView | null;
 
@@ -146,6 +211,11 @@ export type ProjectView = {
 	/**  Что отменит «Отменить» / вернет «Повторить». */
 	undoLabel: string | null,
 	redoLabel: string | null,
+};
+
+export type RuleFile = {
+	name: string,
+	text: string,
 };
 
 export type Sequence = {

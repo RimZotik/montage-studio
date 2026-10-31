@@ -37,6 +37,10 @@ pub struct Limits {
     pub seven_day: Option<LimitWindow>,
 }
 
+/// Лимиты обновились (из чата или по кнопке).
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+pub struct LimitsChanged(pub Limits);
+
 fn window(v: &Value) -> Option<LimitWindow> {
     Some(LimitWindow { utilization: v["utilization"].as_f64()?, resets_at: v["resetsAt"].as_i64()?, status: v["status"].as_str().unwrap_or("allowed").to_owned() })
 }

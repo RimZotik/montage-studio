@@ -27,7 +27,8 @@
     "reload": "Reload window",
     "checkUpdates": "Check for updates",
     "installUpdate": "Install update",
-    "closeProject": "Close project"
+    "closeProject": "Close project",
+    "chat": "Claude chat"
   },
   "tabs": {
     "home": "Home",
@@ -159,9 +160,7 @@
   },
   "prepare": {
     "media": "Media",
-    "mediaSoon": "Project files: drag and drop, thumbnails, waveforms — in version 0.5.",
     "rules": "Project rules",
-    "rulesSoon": "Brief, rules, style and script for Claude — in version 0.5.",
     "project": "Project",
     "name": "Name",
     "folder": "Folder",
@@ -170,7 +169,13 @@
     "w": "w",
     "h": "h",
     "background": "Background",
-    "undoHint": "Changes are saved at once; undo with Ctrl+Z."
+    "undoHint": "Changes are saved at once; undo with Ctrl+Z.",
+    "import": "Import media",
+    "drop": "Drop files into the window",
+    "dropHint": "or click — we sort them into folders",
+    "emptyCat": "Empty",
+    "moveTo": "Move to",
+    "imported": "Files added: {{count}}"
   },
   "projects": {
     "name": "Name",
@@ -179,5 +184,68 @@
     "created": "Created",
     "folder": "Folder",
     "nothing": "Nothing found."
+  },
+  "chat": {
+    "empty": "Tell what video we are making — Claude will help write the brief, rules and plan.",
+    "try1": "Let's write the project brief together",
+    "try2": "Suggest a structure for a 30-second video",
+    "placeholder": "Message Claude…",
+    "hint": "Enter — send, Shift+Enter — new line",
+    "stop": "Stop",
+    "newSession": "New conversation",
+    "accept": "Accept",
+    "edit": "Edit",
+    "reject": "Reject",
+    "sendEdits": "Send edits",
+    "writeEdits": "Write changes…",
+    "denied": "Not allowed in the studio",
+    "stopped": "Reply stopped",
+    "sec": "s",
+    "tokens": "tokens",
+    "kind": {
+      "plan": "Plan",
+      "tool": "Tool",
+      "effect": "Effect",
+      "smart": "Smart clip",
+      "rule": "Rule",
+      "project": "Project"
+    },
+    "verdict": {
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "edited": "Edits sent",
+      "comment": "Comment sent"
+    },
+    "tool": {
+      "Read": "Reads",
+      "Glob": "Finds files",
+      "Grep": "Searches files",
+      "Edit": "Edits",
+      "Write": "Writes"
+    }
+  },
+  "media": {
+    "footage": "Footage",
+    "voice": "Voice",
+    "music": "Music",
+    "sfx": "Sounds",
+    "images": "Images"
+  },
+  "rules": {
+    "brief": "Brief",
+    "rules": "Rules",
+    "style": "Style",
+    "script": "Script",
+    "state": {
+      "saved": "Saved",
+      "dirty": "Edited",
+      "saving": "Saving…"
+    },
+    "hint": {
+      "brief": "What the video is about, for whom, the goal, length, tone. Claude reads this before every reply.",
+      "rules": "Musts and don'ts: pacing, margins, captions, ending…",
+      "style": "Colors, fonts, animation character, sounds.",
+      "script": "Voiceover text and the scene plan."
+    }
   }
 }

@@ -1,14 +1,17 @@
 //! Ядро Montage Studio: команды для интерфейса, SQLite, проверки системы, проекты, лимиты Claude.
 //! Устройство — `docs/architecture.md`.
 
+mod chat;
 mod checks;
 mod claude_limits;
 mod components;
 mod db;
 mod error;
 mod ipc;
+mod media;
 mod project;
 mod projects;
+mod rules;
 mod settings;
 mod updates;
 
@@ -44,6 +47,7 @@ pub fn run() {
         .invoke_handler(ipc.invoke_handler())
         .manage(components::Installs::default())
         .manage(project::ProjectState::default())
+        .manage(chat::ChatState::default())
         .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
             ipc.mount_events(app);

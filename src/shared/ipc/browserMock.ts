@@ -52,6 +52,22 @@ function fakeInstall(id: string) {
   }, 200);
 }
 
+const MOCK_CHAT = [
+  { role: "user", text: "Предложи структуру ролика на 30 секунд", at: now - 300 },
+  { role: "tool", text: "Read rules/brief.md", at: now - 298 },
+  { role: "assistant", text: "По брифу — спокойный промо-ролик. Предлагаю три части:\n\n1. **Хук** — 3 с, крупный план функции.\n2. **Основная часть** — 22 с, три коротких сцены.\n3. **Финал** — 5 с, переход в начало.\n\n```studio-proposal\n{\"id\":\"p1\",\"kind\":\"plan\",\"title\":\"Структура на 30 секунд\",\"description\":\"Хук, три сцены, финал с переходом в начало.\",\"details\":[\"0–3 с: хук\",\"3–25 с: три сцены по ~7 с\",\"25–30 с: финал\"]}\n```\n\n```studio-ask\n{\"id\":\"q1\",\"question\":\"Какой темп?\",\"options\":[\"Спокойный\",\"Динамичный\",\"Как в правилах\"]}\n```", at: now - 290 },
+  { role: "turn", text: JSON.stringify({ ok: true, interrupted: false, durationMs: 9200, inputTokens: 51000, outputTokens: 1300, costUsd: 0.003, denials: ["Write notes.txt"] }), at: now - 289 },
+];
+
+/** Имитация ответа: чтение файла, текст по частям, итог хода. */
+function fakeReply() {
+  const words = "Записал бриф в rules/brief.md: спокойный тон, 30 секунд, вертикальный формат.".split(" ");
+  setTimeout(() => emit("chat-event", { kind: "tool", id: "t9", name: "Write", summary: "rules/brief.md" }), 200);
+  setTimeout(() => emit("chat-event", { kind: "toolDone", id: "t9", error: false }), 500);
+  words.forEach((w, i) => setTimeout(() => emit("chat-event", { kind: "delta", text: (i ? " " : "") + w }), 600 + i * 90));
+  setTimeout(() => emit("chat-event", { kind: "turn", ok: true, interrupted: false, durationMs: 4100, inputTokens: 23000, outputTokens: 400, costUsd: 0.002, denials: [] }), 700 + words.length * 90);
+}
+
 export function installBrowserMock() {
   const w = window as unknown as Record<string, unknown>;
   if ("__TAURI_INTERNALS__" in w) return;
@@ -84,6 +100,29 @@ export function installBrowserMock() {
         mockProject = { ...mockProject, project: { ...mockProject.project, sequence: args?.sequence }, canUndo: true };
         emit("project-changed", mockProject);
         return structuredClone(mockProject);
+      }
+      if (cmd === "media_list")
+        return [
+          ["footage", "screen-01.mp4", 42],
+          ["footage", "screen-02.mp4", 18],
+          ["footage", "broll-sunset.mov", 9],
+          ["voice", "take-2.wav", 29],
+          ["music", "bed.mp3", 130],
+          ["sfx", "hit-low.wav", 1],
+          ["images", "cover.png", null],
+        ].map(([category, name, d]) => ({ path: `media/${category}/${name}`, name, category, size: 1000000, probe: d == null ? null : { durationS: d, width: 1080, height: 1920, audio: true, video: category === "footage" }, thumb: null }));
+      if (cmd === "rules_read")
+        return [
+          { name: "brief", text: "# Бриф\n\nКороткий ролик о новой функции, 30 секунд, вертикальный.\nЗритель — пользователи, которые еще не пробовали функцию.\nТон — спокойный, уверенный.\n" },
+          { name: "rules", text: "- Финал без «ссылка в профиле».\n- Цифры на экране — только реальные.\n" },
+          { name: "style", text: "" },
+          { name: "script", text: "" },
+        ];
+      if (cmd === "chat_history") return MOCK_CHAT;
+      if (cmd === "chat_busy") return false;
+      if (cmd === "chat_send") {
+        fakeReply();
+        return null;
       }
       if (cmd === "project_close") {
         mockProject = null;

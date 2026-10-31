@@ -136,6 +136,11 @@ impl ProjectState {
         Ok(open.view())
     }
 
+    /// Папка и состояние открытого проекта (для чата и других частей).
+    pub fn context(&self) -> Option<(PathBuf, Snapshot)> {
+        self.lock().as_ref().map(|o| (o.dir.clone(), o.doc.clone()))
+    }
+
     fn step(&self, forward: bool) -> AppResult<ProjectView> {
         let mut guard = self.lock();
         let open = guard.as_mut().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
@@ -153,6 +158,9 @@ impl ProjectState {
 pub fn project_load(app: AppHandle, state: State<'_, ProjectState>, db: State<'_, Db>, path: String) -> AppResult<ProjectView> {
     let dir = PathBuf::from(&path);
     let doc = load(&dir)?;
+    if let Some(chat) = tauri::Manager::try_state::<crate::chat::ChatState>(&app) {
+        crate::chat::shutdown(&chat);
+    }
     let seq = &doc.project.sequence;
     crate::projects::remember(&db, &path, &doc.project.name, (seq.width, seq.height, seq.fps))?;
     let view = {
@@ -168,6 +176,9 @@ pub fn project_load(app: AppHandle, state: State<'_, ProjectState>, db: State<'_
 #[tauri::command]
 #[specta::specta]
 pub fn project_close(app: AppHandle, state: State<'_, ProjectState>) {
+    if let Some(chat) = tauri::Manager::try_state::<crate::chat::ChatState>(&app) {
+        crate::chat::shutdown(&chat);
+    }
     *state.lock() = None;
     emit(&app, None);
 }

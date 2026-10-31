@@ -31,6 +31,21 @@ const MIGRATIONS: &[&str] = &[
         seven_day_resets integer,
         seven_day_status text
     );",
+    // 2: расход Claude по ходам (замеры на проект).
+    "create table claude_turns (
+        id integer primary key,
+        project text not null,
+        session text not null,
+        at integer not null,
+        model text not null,
+        input_tokens integer not null,
+        output_tokens integer not null,
+        cache_read integer not null,
+        cache_create integer not null,
+        cost_usd real not null,
+        duration_ms integer not null
+    );
+    create index claude_turns_project on claude_turns (project, at);",
 ];
 
 pub struct Db(Mutex<Connection>);

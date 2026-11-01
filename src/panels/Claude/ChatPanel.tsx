@@ -15,6 +15,16 @@ type Item =
   | { k: "decision"; text: string }
   | { k: "error"; text: string };
 
+/** Правил ли Claude таймлайн в ходе, который закончился строкой `end`. */
+function turnEdited(items: Item[], end: number): boolean {
+  for (let j = end - 1; j >= 0; j--) {
+    const y = items[j];
+    if (!y || y.k === "user") return false;
+    if (y.k === "tool" && y.name === "mcp__studio__timeline_apply") return true;
+  }
+  return false;
+}
+
 /** История с диска → строки чата. */
 function fromHistory(list: ChatItem[]): Item[] {
   return list.flatMap((x): Item[] => {
@@ -256,6 +266,11 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
                       </div>
                     ))}
                   </div>
+                )}
+                {x.ok && !x.interrupted && i === items.length - 1 && turnEdited(items, i) && (
+                  <button className="link undoturn" onClick={() => void ipc.projectUndoClaude().then((r) => r.status === "error" && onError(r.error))}>
+                    {t("chat.undoTurn")}
+                  </button>
                 )}
                 <div className="m-turn">
                   {x.interrupted ? t("chat.stopped") : `${(x.durationMs / 1000).toFixed(1)} ${t("chat.sec")} · ${fmt(Math.round((x.inputTokens + x.outputTokens) / 1000))}k ${t("chat.tokens")}${x.costUsd ? ` · ≈${x.costUsd.toFixed(3)} $` : ""}`}

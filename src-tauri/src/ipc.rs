@@ -2,7 +2,7 @@
 
 use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{chat, checks, claude_limits, components, media, project, projects, rules, settings, updates};
+use crate::{chat, error, checks, claude_limits, components, mcp, media, project, projects, rules, settings, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -30,6 +30,9 @@ pub fn builder() -> Builder<tauri::Wry> {
         project::project_undo,
         project::project_redo,
         project::timeline_apply,
+        project::project_undo_claude,
+        mcp::ui_state_report,
+        error::errors_count,
         chat::chat_send,
         chat::chat_stop,
         chat::chat_new_session,
@@ -41,7 +44,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         rules::rules_read,
         rules::rules_write,
     ])
-    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged])
+    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged, mcp::UiCommand])
 }
 
 #[cfg(any(debug_assertions, test))]

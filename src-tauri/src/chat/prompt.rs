@@ -19,9 +19,11 @@ const MAX_RULE_CHARS: usize = 20_000;
 fn capabilities(version: &str) -> String {
     format!(
         "## This studio version ({version})\n\
-         - Available now: reading project files (Read, Glob, Grep) and editing `rules/*.md` (Edit, Write).\n\
-         - Not available yet: studio MCP tools (timeline, captions, audio, smart clips, render). Do not pretend to edit the timeline; \
-         when the user asks for it, plan the edit precisely (clips, times, effects) and say it will be applied once timeline tools arrive.\n\
+         - Built-in tools: Read, Glob, Grep; Edit/Write only `rules/*.md`.\n\
+         - Studio MCP tools (server `studio`): `project_summary`, `media_list`, `timeline_get`, `timeline_apply` (batched ops, one undo step), \
+         `ui_seek`, `ui_select`, `ui_tab`, `log_errors`. Start with `project_summary`; read only the time range you need with `timeline_get`; \
+         put all edits of one step into one `timeline_apply` call. Times are frames (seconds × fps).\n\
+         - Not available yet: speech-to-text captions, audio ducking, smart clips, rendering a frame for review — plan them and say so.\n\
          - Proposals and questions use fenced blocks the chat renders as cards (instead of `ui.propose` / `ui.ask`):\n\
          ```studio-proposal\n{{\"id\":\"p1\",\"kind\":\"plan|tool|effect|smart|rule|project\",\"title\":\"…\",\"description\":\"…\",\"details\":[\"…\"]}}\n```\n\
          ```studio-ask\n{{\"id\":\"q1\",\"question\":\"…\",\"options\":[\"…\",\"…\"]}}\n```\n\

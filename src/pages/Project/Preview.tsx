@@ -24,6 +24,10 @@ export function Preview({ item, projectPath }: { item: MediaItem; projectPath: s
   const [time, setTime] = useState(0);
   const [dur, setDur] = useState(item.probe?.durationS ?? 0);
   const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
+  useEffect(() => {
+    if (ref.current) ref.current.volume = volume;
+  }, [volume, item.path]);
   const [loop, setLoop] = useState(true);
   const src = convertFileSrc(`${projectPath}\\${item.path.replaceAll("/", "\\")}`);
   const isVideo = item.category === "footage";
@@ -85,8 +89,9 @@ export function Preview({ item, projectPath }: { item: MediaItem; projectPath: s
             <Repeat size={14} strokeWidth={1.75} />
           </button>
           <button className="iconbtn" title={t("preview.mute")} onClick={() => setMuted((m) => !m)}>
-            {muted ? <VolumeX size={14} strokeWidth={1.75} /> : <Volume2 size={14} strokeWidth={1.75} />}
+            {muted || volume === 0 ? <VolumeX size={14} strokeWidth={1.75} /> : <Volume2 size={14} strokeWidth={1.75} />}
           </button>
+          <input className="scrub vol" type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume} onChange={(e) => { setMuted(false); setVolume(Number(e.target.value)); }} style={{ ["--p" as string]: `${(muted ? 0 : volume) * 100}%` }} title={`${Math.round(volume * 100)}%`} />
         </div>
       )}
       <div className="pinfo">

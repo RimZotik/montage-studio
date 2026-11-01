@@ -1,6 +1,8 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { PlayerRef } from "@remotion/player";
+import { Loader } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { type AppError, type MediaItem, type Op, type ProjectView, commands as ipc, events } from "@/shared/ipc/bindings";
 import { typingTarget } from "@/app/commands";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
@@ -14,7 +16,8 @@ const WIDTHS = { media: 280, inspector: 300, timeline: 300 };
 
 /** «Монтаж»: медиа | монитор | свойства, снизу таймлайн. Клавиши: пробел, стрелки, S, Delete,
  *  Shift+Delete, M, +/−. */
-export function EditPage({ view, onError, onImport, mediaKey }: { view: ProjectView; onError: (e: AppError) => void; onImport: (files: string[]) => void; mediaKey: number }) {
+export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { view: ProjectView; onError: (e: AppError) => void; onImport: (files: string[]) => void; mediaKey: number; claudeBusy: boolean }) {
+  const { t } = useTranslation();
   const fps = view.project.sequence.fps;
   const playerRef = useRef<PlayerRef | null>(null);
   const [frame, setFrame] = useState(0);
@@ -124,6 +127,21 @@ export function EditPage({ view, onError, onImport, mediaKey }: { view: ProjectV
     return () => window.removeEventListener("keydown", onKey);
   }, [apply, frame, fps, seek, selected, total, view.clips]);
 
+  // Команды Claude интерфейсу: головка и выделение.
+  useEffect(() => {
+    const off = events.uiCommand.listen(({ payload: c }) => {
+      if (c.kind === "seek") seek(c.frame);
+      if (c.kind === "select") setSelected(c.ids);
+    });
+    return () => void off.then((f) => f());
+  }, [seek]);
+
+  // Что видит Claude в сводке проекта: головка, выделение, вкладка.
+  useEffect(() => {
+    const t = setTimeout(() => void ipc.uiStateReport({ frame, selected, tab: "edit" }), 250);
+    return () => clearTimeout(t);
+  }, [frame, selected]);
+
   const clip = selected.length === 1 ? (view.clips.find((c) => c.id === selected[0]) ?? null) : null;
 
   return (
@@ -138,7 +156,18 @@ export function EditPage({ view, onError, onImport, mediaKey }: { view: ProjectV
         </div>
       </div>
       <Splitter width={w.timeline} min={160} max={640} side="right" vertical onChange={(v) => setW("timeline", v)} onReset={() => setW("timeline", WIDTHS.timeline)} />
-      <div style={{ height: w.timeline, display: "flex", minHeight: 0 }}>
+      <div style={{ height: w.timeline, display: "flex", minHeight: 0, position: "relative" }}>
+        {claudeBusy && (
+          <div className="claudelock">
+            <span className="ic">
+              <Loader size={14} strokeWidth={1.75} className="spin" />
+              {t("edit.claudeBusy")}
+            </span>
+            <button className="btn" onClick={() => void ipc.chatStop()}>
+              {t("chat.stop")}
+            </button>
+          </div>
+        )}
         <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} />
       </div>
       {drag && (

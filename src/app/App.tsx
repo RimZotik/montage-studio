@@ -51,6 +51,8 @@ export function App() {
   const [rulesKey, setRulesKey] = useState(0);
   const [mediaKey, setMediaKey] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  const [claudeBusy, setClaudeBusy] = useState(false);
+  const [errors, setErrors] = useState(0);
   const [ws, setWs] = useWidths("workspace", { chat: 400 });
 
   const toast = useCallback((text: string, error = false) => {
@@ -117,12 +119,25 @@ export function App() {
     const off = events.projectChanged.listen(({ payload }) => setProject(payload));
     // Лимиты приходят с каждым ответом Claude в чате.
     const offLimits = events.limitsChanged.listen(({ payload }) => setLimits(payload));
-    // После ответа Claude правила проекта могли измениться — перечитать.
-    const offTurn = events.chatEvent.listen(({ payload }) => payload.kind === "turn" && setRulesKey((k) => k + 1));
+    // После ответа Claude правила проекта могли измениться — перечитать; блокировка снимается.
+    const offTurn = events.chatEvent.listen(({ payload }) => {
+      if (payload.kind !== "turn") return;
+      setRulesKey((k) => k + 1);
+      setClaudeBusy(false);
+    });
+    // Команды Claude интерфейсу: вкладка, блокировка области на время его правок.
+    const offUi = events.uiCommand.listen(({ payload: c }) => {
+      if (c.kind === "tab") setTab(c.tab as Tab);
+      if (c.kind === "busy") setClaudeBusy(true);
+    });
+    // Ошибки журнала с запуска — значок в строке состояния.
+    const timer = setInterval(() => void ipc.errorsCount().then(setErrors), 5000);
     return () => {
       void off.then((f) => f());
       void offLimits.then((f) => f());
       void offTurn.then((f) => f());
+      void offUi.then((f) => f());
+      clearInterval(timer);
     };
   }, []);
 
@@ -341,7 +356,7 @@ export function App() {
               rulesKey={rulesKey}
             />
           ) : tab === "edit" ? (
-            <EditPage view={project} onError={fail} onImport={(files) => void importFiles(files)} mediaKey={mediaKey} />
+            <EditPage view={project} onError={fail} onImport={(files) => void importFiles(files)} mediaKey={mediaKey} claudeBusy={claudeBusy} />
           ) : (
             <div className="soon">{t(`soon.${tab}`)}</div>
           )}
@@ -399,7 +414,21 @@ export function App() {
           </span>
         )}
         {claude && <span className="ic">{claude.version ? t("status.claude", { version: claude.version }) : t("status.noClaude")}</span>}
-        <button className="ic end" onClick={() => void toggleLanguage()}>
+        {errors > 0 && (
+          <button
+            className="ic errs end"
+            title={t("status.errorsHint")}
+            onClick={() => {
+              if (!project) return;
+              setChatOpen(true);
+              void ipc.chatSend(t("status.errorsAsk"), "user").then((r) => r.status === "error" && fail(r.error));
+            }}
+          >
+            <TriangleAlert size={12} strokeWidth={1.75} />
+            {t("status.errors", { count: errors })}
+          </button>
+        )}
+        <button className={`ic ${errors > 0 ? "" : "end"}`} onClick={() => void toggleLanguage()}>
           <Languages size={12} strokeWidth={1.75} />
           {i18n.language.toUpperCase()}
         </button>

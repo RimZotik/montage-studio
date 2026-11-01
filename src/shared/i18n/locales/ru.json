@@ -97,7 +97,10 @@
     "missingCount": "Не хватает: {{list}}",
     "checking": "Проверка системы…",
     "claude": "Claude Code {{version}}",
-    "noClaude": "Claude Code не найден"
+    "noClaude": "Claude Code не найден",
+    "errors": "Ошибок: {{count}}",
+    "errorsHint": "Попросить Claude разобраться по журналу",
+    "errorsAsk": "В журнале студии есть ошибки. Посмотри их (log_errors) и коротко скажи, в чем может быть причина и что сделать."
   },
   "newProject": {
     "title": "Новый проект",
@@ -138,7 +141,8 @@
     "updateInstall": "Обновление не установилось — попробуйте еще раз.",
     "overlap": "Клипы на одной дорожке не могут пересекаться.",
     "invalidEdit": "Эта правка не подходит.",
-    "trackLocked": "Дорожка закреплена."
+    "trackLocked": "Дорожка закреплена.",
+    "nothingToUndo": "Последнее изменение сделал не Claude."
   },
   "install": {
     "install": "Установить · {{mb}} МБ",
@@ -230,8 +234,17 @@
       "Glob": "Ищет файлы",
       "Grep": "Ищет в файлах",
       "Edit": "Правит",
-      "Write": "Записывает"
-    }
+      "Write": "Записывает",
+      "mcp__studio__project_summary": "Смотрит проект",
+      "mcp__studio__media_list": "Смотрит медиа",
+      "mcp__studio__timeline_get": "Читает таймлайн",
+      "mcp__studio__timeline_apply": "Правит таймлайн",
+      "mcp__studio__ui_seek": "Ставит головку",
+      "mcp__studio__ui_select": "Выделяет клипы",
+      "mcp__studio__ui_tab": "Открывает вкладку",
+      "mcp__studio__log_errors": "Читает журнал ошибок"
+    },
+    "undoTurn": "Отменить изменения Claude"
   },
   "media": {
     "footage": "Футаж",
@@ -312,6 +325,7 @@
         "k": "Ctrl+колесо",
         "v": "масштаб"
       }
-    }
+    },
+    "claudeBusy": "Claude работает с таймлайном — подождите или прервите"
   }
 }

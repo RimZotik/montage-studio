@@ -73,6 +73,12 @@ fn u(v: &Value) -> u64 {
 
 /// Над чем работает инструмент: путь (относительно папки проекта `root`), шаблон или команда.
 pub fn summary(input: &Value, root: &str) -> String {
+    if let Some(ops) = input["ops"].as_array() {
+        return format!("{} × {}", ops.len(), input["label"].as_str().unwrap_or("ops"));
+    }
+    if let Some(f) = input["frame"].as_u64() {
+        return format!("{f}");
+    }
     for key in ["file_path", "path", "pattern", "command", "url"] {
         if let Some(s) = input[key].as_str() {
             let s = s.replace('\\', "/");

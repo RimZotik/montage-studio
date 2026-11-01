@@ -26,7 +26,8 @@ pub use events::{ChatEvent, Parsed};
 /// Встроенные инструменты Claude в студии (до инструментов MCP студии).
 const TOOLS: &str = "Read,Glob,Grep,Edit,Write";
 /// Без вопроса разрешено: чтение и правка правил проекта. Остальное — отказ (видно в чате).
-const ALLOWED: [&str; 5] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)"];
+/// `mcp__studio` — все инструменты MCP студии (правки идут через сервис проекта с отменой).
+const ALLOWED: [&str; 6] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)", "mcp__studio"];
 
 /// Строка истории чата для показа (`.studio/claude/chat.jsonl`).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
@@ -96,7 +97,12 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc
     let claude = find(app, ToolId::Claude).ok_or_else(|| AppError::new("claudeMissing", "claude not found"))?;
     let cdir = claude_dir(dir);
     let mcp = cdir.join("mcp.json");
-    std::fs::write(&mcp, r#"{"mcpServers":{}}"#)?;
+    // Только MCP-сервер студии (адрес и ключ — новые на каждый запуск приложения).
+    let servers = app.try_state::<crate::mcp::McpState>().and_then(|s| s.info()).map_or_else(
+        || serde_json::json!({}),
+        |i| serde_json::json!({ "studio": { "type": "http", "url": i.url, "headers": { "Authorization": format!("Bearer {}", i.token) } } }),
+    );
+    std::fs::write(&mcp, serde_json::json!({ "mcpServers": servers }).to_string())?;
     let mut command = build_command(&claude, dir, system, &mcp, saved_session(dir));
     command
         .stdin(Stdio::piped())
@@ -120,7 +126,7 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc
 }
 
 /// Команда запуска `claude` для чата проекта.
-fn build_command(claude: &Path, dir: &Path, system: &Path, mcp: &Path, resume: Option<String>) -> Command {
+pub(crate) fn build_command(claude: &Path, dir: &Path, system: &Path, mcp: &Path, resume: Option<String>) -> Command {
     let mut command = Command::new(claude);
     command
         .current_dir(dir)
@@ -230,6 +236,10 @@ pub fn chat_send(app: AppHandle, chat: State<'_, ChatState>, project: State<'_, 
     writeln!(session.stdin, "{line}").and_then(|()| session.stdin.flush()).map_err(|e| AppError::new("claudeStart", e.to_string()))?;
     chat.busy.store(true, std::sync::atomic::Ordering::SeqCst);
     log_item(&dir, if kind == "decision" { "decision" } else { "user" }, &text);
+    // Новый ход: правки Claude в нем подписываются `claude#N` (отмена хода одним действием).
+    if let Some(mcp) = app.try_state::<crate::mcp::McpState>() {
+        mcp.turn.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
     Ok(())
 }
 

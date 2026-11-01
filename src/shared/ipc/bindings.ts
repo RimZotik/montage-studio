@@ -56,6 +56,11 @@ export const commands = {
 	 *  шаг истории с подписью `label`. Возвращает ID созданных клипов.
 	 */
 	timelineApply: (ops: Op[], label: string) => typedError<string[], AppError>(__TAURI_INVOKE("timeline_apply", { ops, label })),
+	/**  Отменить весь последний ход Claude (все шаги с его подписью `claude#N` подряд). */
+	projectUndoClaude: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo_claude")),
+	/**  Интерфейс сообщает головку, выделение и вкладку (для сводки Claude). */
+	uiStateReport: (ui: UiState) => __TAURI_INVOKE<void>("ui_state_report", { ui }),
+	errorsCount: () => __TAURI_INVOKE<number>("errors_count"),
 	/**
 	 *  Отправить сообщение. `kind` — `user` или `decision` (ответ на карточку: в чате показывается
 	 *  отметкой на карточке, а не сообщением).
@@ -84,6 +89,7 @@ export const events = {
 	limitsChanged: makeEvent<LimitsChanged>("limits-changed"),
 	mediaChanged: makeEvent<MediaChanged>("media-changed"),
 	projectChanged: makeEvent<ProjectChanged>("project-changed"),
+	uiCommand: makeEvent<UiCommand>("ui-command"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
 
@@ -354,6 +360,18 @@ export type Track = {
 };
 
 export type TrackKind = "video" | "audio" | "captions";
+
+/**  Команда интерфейсу от Claude (перейти к кадру, выделить, вкладка, масштаб). */
+export type UiCommand = { kind: "seek"; frame: number } | { kind: "select"; ids: string[] } | { kind: "tab"; tab: string } | 
+/**  Claude правит область (`timeline`, `rules`) — интерфейс показывает блокировку до конца хода. */
+{ kind: "busy"; area: string };
+
+/**  Что интерфейс сообщил о себе (головка, выделение, вкладка) — для `project_summary`. */
+export type UiState = {
+	frame: number,
+	selected: string[],
+	tab: string,
+};
 
 export type UpdateChanged = UpdateStatus;
 

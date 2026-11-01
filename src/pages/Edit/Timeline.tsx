@@ -3,7 +3,7 @@ import { Eye, EyeOff, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clip, MediaItem, Op, ProjectView, Track } from "@/shared/ipc/bindings";
-import { setDropTarget } from "./dragMedia";
+import { setDropTarget, useDragMedia } from "./dragMedia";
 import { snap, timecode } from "./time";
 
 type Props = {
@@ -39,6 +39,10 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
   const fps = view.project.sequence.fps;
   const scroller = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  // Отпущенная правка до ответа ядра: клип остается там, где его отпустили (без рывка назад).
+  const [pending, setPending] = useState<{ id: string; track: string; start: number; duration: number } | null>(null);
+  useEffect(() => setPending(null), [view.clips]);
+  const mediaDrag = useDragMedia();
   const byPath = useMemo(() => new Map(media.map((m) => [m.path, m])), [media]);
   const width = Math.max(total + fps * 10, fps * 40) * zoom;
 
@@ -54,18 +58,28 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     [frame, view.clips, view.markers],
   );
 
-  // Файл из медиа, отпущенный над дорожкой, — новый клип с начала под курсором.
-  useEffect(() => {
-    setDropTarget((item, x, y) => {
+  /** Куда ляжет файл из медиа под курсором: только на подходящую дорожку под курсором. */
+  const dropAt = useCallback(
+    (item: MediaItem, x: number, y: number) => {
       const lane = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-track]");
-      const track = view.tracks.find((tr) => tr.id === lane?.dataset.track) ?? view.tracks.find((tr) => fits(tr, item));
-      if (!track || !fits(track, item)) return;
+      const track = view.tracks.find((tr) => tr.id === lane?.dataset.track);
+      if (!track || !fits(track, item) || track.locked) return null;
       const duration = item.category === "images" ? fps * 3 : Math.max(1, Math.round((item.probe?.durationS ?? 5) * fps));
       const start = snap(frameAt(x), snapPoints(""), SNAP_PX / zoom);
-      void apply([{ op: "addClip", track: track.id, kind: "media", src: item.path, text: null, start, duration, offset: null }], "add");
+      return { track: track.id, start, duration };
+    },
+    [view.tracks, fps, frameAt, snapPoints, zoom],
+  );
+
+  // Файл из медиа, отпущенный над дорожкой, — новый клип; мимо дорожки — ничего.
+  useEffect(() => {
+    setDropTarget((item, x, y) => {
+      const at = dropAt(item, x, y);
+      if (at) void apply([{ op: "addClip", track: at.track, kind: "media", src: item.path, text: null, start: at.start, duration: at.duration, offset: null }], "add");
     });
     return () => setDropTarget(null);
-  }, [view.tracks, fps, frameAt, snapPoints, zoom, apply]);
+  }, [dropAt, apply]);
+  const ghost = mediaDrag ? dropAt(mediaDrag.item, mediaDrag.x, mediaDrag.y) : null;
 
   const onClipDown = (e: React.PointerEvent, clip: Clip, mode: Drag["mode"]) => {
     e.stopPropagation();
@@ -84,7 +98,9 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     const source = c.src ? byPath.get(c.src)?.probe?.durationS : null;
     // Длина файла ограничивает растяжение клипа вправо (у текста и заливки — без ограничения).
     const maxDur = c.kind === "media" && source ? Math.round(source * fps) - (c.offset ?? 0) : Infinity;
-    let next = { ...drag, moved: drag.moved || Math.abs(e.clientX - drag.x0) > 2 };
+    // Пока мышь почти не сдвинулась — клип на месте (без рывка к ближней точке привязки).
+    if (!drag.moved && Math.abs(e.clientX - drag.x0) <= 3 && drag.mode === "move") return;
+    let next = { ...drag, moved: true };
     if (drag.mode === "move") {
       let start = Math.max(0, c.start + df);
       const end = snap(start + c.duration, pts, r);
@@ -110,6 +126,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     setDrag(null);
     if (!d.moved) return;
     const c = d.clip;
+    setPending({ id: c.id, track: d.track, start: d.start, duration: d.duration });
     if (d.mode === "move") {
       if (d.start !== c.start || d.track !== c.track) void apply([{ op: "moveClip", id: c.id, track: d.track !== c.track ? d.track : null, start: d.start }], "move");
     } else {
@@ -117,12 +134,15 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     }
   };
 
-  // Колесо с Ctrl — масштаб к курсору; без — прокрутка.
+  // Колесо — по времени; Shift+колесо — по дорожкам; Ctrl или Alt+колесо — масштаб к курсору.
   const onWheel = (e: React.WheelEvent) => {
-    if (!e.ctrlKey) return;
-    e.preventDefault();
     const el = scroller.current;
     if (!el) return;
+    if (!e.ctrlKey && !e.altKey) {
+      if (e.shiftKey) return;
+      el.scrollLeft += e.deltaY + e.deltaX;
+      return;
+    }
     const at = frameAt(e.clientX);
     const z = Math.min(40, Math.max(0.05, zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
     onZoom(z);
@@ -176,9 +196,9 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
               </button>
             </div>
             {view.clips
-              .filter((c) => (drag?.clip.id === c.id ? drag.track : c.track) === tr.id)
+              .filter((c) => (drag?.clip.id === c.id ? drag.track : pending?.id === c.id ? pending.track : c.track) === tr.id)
               .map((c) => {
-                const live = drag?.clip.id === c.id ? drag : null;
+                const live = drag?.clip.id === c.id ? drag : pending?.id === c.id ? pending : null;
                 const start = live ? live.start : c.start;
                 const duration = live ? live.duration : c.duration;
                 const m = c.src ? byPath.get(c.src) : undefined;
@@ -198,6 +218,11 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
                   </div>
                 );
               })}
+            {ghost?.track === tr.id && (
+              <div className={`clip ghost ${tr.kind}`} style={{ left: HEAD + ghost.start * zoom, width: Math.max(4, ghost.duration * zoom) }}>
+                <span className="cl">{mediaDrag?.item.name}</span>
+              </div>
+            )}
           </div>
         ))}
         <div className="playhead" style={{ left: HEAD + frame * zoom }} />

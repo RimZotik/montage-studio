@@ -56,7 +56,40 @@ function CaptionClip({ clip }: { clip: Clip }) {
   );
 }
 
-export function TimelineComposition({ sequence, tracks, clips, srcOf }: CompositionProps) {
+/** Части одного файла встык (после разреза), продолжающие друг друга в файле и с одинаковыми
+ *  свойствами, играются одним клипом — иначе на стыке новый проигрыватель дает разрыв звука и
+ *  картинки. */
+export function joinRuns(clips: Clip[]): Clip[] {
+  const out: Clip[] = [];
+  for (const c of [...clips].sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start)) {
+    const prev = out[out.length - 1];
+    const same = (a: Clip, b: Clip) => {
+      const pa = propsOf(a);
+      const pb = propsOf(b);
+      return pa.volume === pb.volume && pa.opacity === pb.opacity && pa.scale === pb.scale && pa.x === pb.x && pa.y === pb.y;
+    };
+    if (
+      prev &&
+      prev.kind === "media" &&
+      c.kind === "media" &&
+      prev.track === c.track &&
+      prev.src === c.src &&
+      prev.start + prev.duration === c.start &&
+      (prev.offset ?? 0) + prev.duration === (c.offset ?? 0) &&
+      propsOf(prev).fadeOut === 0 &&
+      propsOf(c).fadeIn === 0 &&
+      same(prev, c)
+    ) {
+      out[out.length - 1] = { ...prev, duration: prev.duration + c.duration, props: { ...propsOf(prev), fadeOut: propsOf(c).fadeOut } };
+    } else out.push(c);
+  }
+  return out;
+}
+
+export function TimelineComposition({ sequence, tracks, clips: raw, srcOf }: CompositionProps) {
+  const clips = joinRuns(raw);
+  // Следующий клип подгружается заранее, чтобы на стыке не было паузы.
+  const premount = sequence.fps;
   // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх.
   const visual = [...tracks].reverse().filter((t) => t.kind !== "audio" && !t.muted);
   const audio = tracks.filter((t) => t.kind === "audio" && !t.muted);
@@ -66,7 +99,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
         clips
           .filter((c) => c.track === t.id)
           .map((c) => (
-            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} layout="none">
+            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} premountFor={premount}>
               <AbsoluteFill>{c.kind === "caption" ? <CaptionClip clip={c} /> : <VisualClip clip={c} srcOf={srcOf} />}</AbsoluteFill>
             </Sequence>
           )),
@@ -75,7 +108,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
         clips
           .filter((c) => c.track === t.id && c.src)
           .map((c) => (
-            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} layout="none">
+            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} premountFor={premount}>
               <Html5Audio src={srcOf(c.src ?? "")} trimBefore={c.offset} volume={(f: number) => propsOf(c).volume * fade(f, c)} />
             </Sequence>
           )),

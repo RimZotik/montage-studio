@@ -396,3 +396,10 @@ input { font: inherit; color: inherit; }
 .editpage .col.media { display: flex; flex-direction: column; padding: 14px 14px; overflow: auto; min-width: 0; }
 .sl { grid-template-columns: 84px minmax(0, 1fr) 46px; }
 .sl input { min-width: 0; width: 100%; }
+.clip.ghost { opacity: 0.55; outline: 2px dashed var(--accent); outline-offset: -2px; pointer-events: none; }
+.scrub.vol { flex: none; width: 84px; }
+
+.claudelock { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255, 248, 243, 0.78); backdrop-filter: blur(1px); color: var(--accent-ink); font-weight: 500; }
+.undoturn { display: inline-block; margin: 2px 0 4px; }
+.status .errs { color: var(--danger); }
+.status .errs > svg { color: var(--danger); }

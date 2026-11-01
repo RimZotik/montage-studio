@@ -139,6 +139,18 @@ impl ProjectState {
         Ok(open.view())
     }
 
+    /// Открыть проект напрямую (тесты).
+    #[cfg(test)]
+    pub fn open_for_test(&self, dir: PathBuf, doc: Snapshot) {
+        *self.lock() = Some(Open { dir, doc, history: History::default() });
+    }
+
+    /// Подпись последнего шага истории.
+    #[cfg(test)]
+    pub fn undo_label(&self) -> Option<String> {
+        self.lock().as_ref().and_then(|o| o.history.undo_label().map(str::to_owned))
+    }
+
     /// Папка и состояние открытого проекта (для чата и других частей).
     pub fn context(&self) -> Option<(PathBuf, Snapshot)> {
         self.lock().as_ref().map(|o| (o.dir.clone(), o.doc.clone()))
@@ -234,6 +246,23 @@ pub fn timeline_apply(app: AppHandle, state: State<'_, ProjectState>, ops: Vec<t
     })?;
     emit(&app, Some(view));
     Ok(created)
+}
+
+/// Отменить весь последний ход Claude (все шаги с его подписью `claude#N` подряд).
+#[tauri::command]
+#[specta::specta]
+pub fn project_undo_claude(app: AppHandle, state: State<'_, ProjectState>) -> AppResult<ProjectView> {
+    let label = state.lock().as_ref().and_then(|o| o.history.undo_label().map(str::to_owned));
+    let Some(label) = label.filter(|l| l.starts_with("claude#")) else {
+        return Err(AppError::new("nothingToUndo", "last change is not by Claude"));
+    };
+    let mut view = None;
+    while state.lock().as_ref().and_then(|o| o.history.undo_label().map(str::to_owned)).as_deref() == Some(label.as_str()) {
+        view = Some(state.step(false)?);
+    }
+    let view = view.ok_or_else(|| AppError::new("nothingToUndo", "nothing"))?;
+    emit(&app, Some(view.clone()));
+    Ok(view)
 }
 
 #[tauri::command]

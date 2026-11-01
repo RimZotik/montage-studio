@@ -1,6 +1,6 @@
 [package]
 name = "montage-studio"
-version = "0.6.0"
+version = "0.7.0"
 description = "Video editing studio with Claude Code"
 edition = "2024"
 publish = false
@@ -30,6 +30,8 @@ log = "0.4"
 rusqlite = { version = "0.41", features = ["bundled"] }
 sysinfo = "0.40"
 which = "8"
+# MCP-сервер студии для Claude (HTTP на 127.0.0.1).
+tiny_http = "0.12"
 # Загрузка компонентов: TLS на ring (aws-lc-rs требует cmake/NASM при сборке).
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "stream", "blocking"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
@@ -39,6 +41,7 @@ zip = { version = "4", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
+tauri = { version = "2", features = ["protocol-asset", "test"] }
 
 [profile.release]
 codegen-units = 1

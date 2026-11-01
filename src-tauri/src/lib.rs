@@ -8,6 +8,7 @@ mod components;
 mod db;
 mod error;
 mod ipc;
+mod mcp;
 mod media;
 mod project;
 mod projects;
@@ -64,6 +65,7 @@ pub fn run() {
         .manage(project::ProjectState::default())
         .manage(chat::ChatState::default())
         .manage(media::MediaJobs::default())
+        .manage(mcp::McpState::default())
         .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
             ipc.mount_events(app);
@@ -75,6 +77,9 @@ pub fn run() {
             app.manage(db::Db::open(&config.join("studio.db")).map_err(|e| e.message)?);
             log::info!("Montage Studio {} started; config={}", app.package_info().version, config.display());
             updates::start(app.handle());
+            // MCP-сервер студии для Claude (адрес и ключ — в mcp.json чата проекта).
+            let info = mcp::start(app.handle());
+            *app.state::<mcp::McpState>().info.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = info;
             Ok(())
         })
         .run(tauri::generate_context!())

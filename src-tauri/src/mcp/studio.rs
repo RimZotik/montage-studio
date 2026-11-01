@@ -25,6 +25,7 @@ pub fn list() -> Value {
         { "name": "captions_file", "description": "Real video captions as files. action export: write .srt, .vtt, .ass next to the videos from the captions track. action import: read a .srt/.vtt/.ass file (path) onto the captions track, replacing what is there, with its look.", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "path": { "type": "string" } }, "required": ["action"] } },
         { "name": "component_place", "description": "Put a saved code scene from the library on the timeline at frame: installs its code if needed, a free video track, params as its data. Returns the clip id.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frame": { "type": "integer" }, "seconds": { "type": "number" }, "params": { "type": "object" } }, "required": ["id", "frame"] } },
         { "name": "notes_write", "description": "Replace your hidden notes (not shown to the user, always in your context, up to 4000 characters). scope project: this video; user: how this user works, for all projects.", "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" }, "text": { "type": "string" } }, "required": ["scope", "text"] } },
+        { "name": "media_import", "description": "Copy files from disk into the project media (sorted by kind).", "inputSchema": { "type": "object", "properties": { "files": { "type": "array", "items": { "type": "string" } } }, "required": ["files"] } },
         { "name": "smart_reload", "description": "Show changes in smart/ in the monitor. Call after editing a component without a timeline change.", "inputSchema": { "type": "object", "properties": {} } },
         { "name": "component_install", "description": "Install a library component set into smart/<id>/ and its files into media/assets/ (staticFile finds them by the short path).", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
         { "name": "library_save", "description": "Create or update an effect or tool, including its control panel. New items go to `pack` (default main). The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
@@ -35,7 +36,7 @@ pub fn list() -> Value {
         { "name": "sound_add", "description": "Put a library sound on the timeline so that its hit lands on each of frames (synthesized once into media/sfx), one call for all frames. track default: last audio track; volume 0–2.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frames": { "type": "array", "items": { "type": "integer" } }, "track": { "type": "string" }, "volume": { "type": "number" } }, "required": ["id", "frames"] } },
         { "name": "speech_transcribe", "description": "What is said in a media file or on a clip, phrase by phrase (local model, cached). path — seconds in the file; clip — timeline frames, only what is audible. Status pending: call again.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "clip": { "type": "string" }, "language": { "type": "string" } } } },
         { "name": "speech_find", "description": "Find words in already transcribed clips: timeline frames where they are said.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } },
-        { "name": "audio_analyze", "description": "Loudness (LUFS, peak, range) and pauses of a media file.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "threshold": { "type": "number" }, "min_pause": { "type": "number" } }, "required": ["path"] } },
+        { "name": "audio_analyze", "description": "Loudness (LUFS, peak, range) and pauses of a file in media/ or a finished video in output/.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "threshold": { "type": "number" }, "min_pause": { "type": "number" } }, "required": ["path"] } },
         { "name": "render_frame", "description": "Render one timeline frame to a JPEG (exactly as export will look) and return its path: read it with Read to see the result. Use sparingly, one frame at a time.", "inputSchema": { "type": "object", "properties": { "frame": { "type": "integer" }, "scale": { "type": "number" } }, "required": ["frame"] } },
         { "name": "export_start", "description": "Render the video to output/ in the background. quality: high (default, for social networks) | max | compact. Only when the user asks for it. Check with export_status.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" }, "quality": { "type": "string" } } } },
         { "name": "export_status", "description": "Is the render engine installed, is an export running, finished files with size and bitrate.", "inputSchema": { "type": "object", "properties": {} } },
@@ -67,8 +68,8 @@ fn turn_label(app: &AppHandle) -> String {
 
 fn media_file(app: &AppHandle, path: &str) -> Result<std::path::PathBuf, String> {
     let (dir, _) = app.state::<ProjectState>().context().ok_or("no project is open")?;
-    if !path.starts_with("media/") || path.contains("..") {
-        return Err("path must be inside media/".into());
+    if !(path.starts_with("media/") || path.starts_with("output/")) || path.contains("..") {
+        return Err("path must be inside media/ or output/".into());
     }
     Ok(dir.join(path))
 }
@@ -143,7 +144,15 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
                 std::fs::write(&path, text).map_err(|e| e.to_string())?;
                 Ok("saved".into())
             }
+            "media_import" => {
+                let files: Vec<String> = serde_json::from_value(args["files"].clone()).map_err(|e| e.to_string())?;
+                let (dir, _) = app.state::<ProjectState>().context().ok_or("no project is open")?;
+                let r = crate::media::import(&dir, &files, find(app, ToolId::Ffprobe).as_deref()).map_err(|e| e.message)?;
+                let _ = tauri_specta::Event::emit(&crate::media::MediaChanged, app);
+                Ok(format!("imported {}, skipped {}", r.imported, r.skipped.len()))
+            }
             "smart_reload" => {
+                let _ = tauri_specta::Event::emit(&crate::media::MediaChanged, app);
                 let _ = tauri_specta::Event::emit(&crate::smart::SmartChanged, app);
                 Ok("ok".into())
             }

@@ -45,6 +45,9 @@ export function Monitor({ view, total, playerRef, srcOf, frame, playing, smart }
             clickToPlay={false}
             doubleClickToFullscreen
             spaceKeyToPlayOrPause={false}
+            // Заранее созданные звуки ограничивают их число одновременно: с десятками клипов плеер падал.
+            numberOfSharedAudioTags={0}
+            errorFallback={({ error }) => <div className="monerror">{error.message}</div>}
             acknowledgeRemotionLicense
           />
           {safe && vertical && <div className="safezone" />}

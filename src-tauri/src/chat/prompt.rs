@@ -19,7 +19,7 @@ const MAX_RULE_CHARS: usize = 20_000;
 fn capabilities(version: &str) -> String {
     format!(
         "## This studio version ({version})\n\
-         - Built-in tools: Read, Glob, Grep; Edit/Write only `rules/**` and `smart/**` (scenes in code).\n\
+         - Built-in tools: Read, Glob, Grep; Edit/Write in `rules/**`, `smart/**` (scenes in code), `scripts/**`; Bash: `node`, `ffmpeg`, `ffprobe`.\n\
          - Studio MCP tools (server `studio`): `project_summary`, `media_list`, `timeline_get`, `timeline_apply` (batched ops, one undo step), \
          `ui_seek`, `ui_select`, `ui_tab`, `log_errors`. Start with `project_summary`; read only the time range you need with `timeline_get`; \
          put all edits of one step into one `timeline_apply` call. Times are frames (seconds × fps).\n\

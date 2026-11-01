@@ -24,10 +24,10 @@ use crate::project::ProjectState;
 pub use events::{ChatEvent, Parsed};
 
 /// Встроенные инструменты Claude в студии (до инструментов MCP студии).
-const TOOLS: &str = "Read,Glob,Grep,Edit,Write";
+const TOOLS: &str = "Read,Glob,Grep,Edit,Write,Bash";
 /// Без вопроса разрешено: чтение и правка правил проекта. Остальное — отказ (видно в чате).
 /// `mcp__studio` — все инструменты MCP студии (правки идут через сервис проекта с отменой).
-const ALLOWED: [&str; 8] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)", "Edit(smart/**)", "Write(smart/**)", "mcp__studio"];
+const ALLOWED: [&str; 13] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)", "Edit(smart/**)", "Write(smart/**)", "Edit(scripts/**)", "Write(scripts/**)", "Bash(node *)", "Bash(ffmpeg *)", "Bash(ffprobe *)", "mcp__studio"];
 
 /// Строка истории чата для показа (`.studio/claude/chat.jsonl`).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
@@ -127,6 +127,12 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, model: &s
     );
     std::fs::write(&mcp, serde_json::json!({ "mcpServers": servers }).to_string())?;
     let mut command = build_command(&claude, dir, system, &mcp, saved_session(dir));
+    // Скрипты Claude находят ffmpeg и Node студии, даже если их нет в системном PATH.
+    let mut paths: Vec<std::path::PathBuf> = [ToolId::Ffmpeg, ToolId::Node].into_iter().filter_map(|t| find(app, t)?.parent().map(Path::to_path_buf)).collect();
+    paths.extend(std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default());
+    if let Ok(joined) = std::env::join_paths(paths) {
+        command.env("PATH", joined);
+    }
     command
         .args(["--model", model])
         .stdin(Stdio::piped())

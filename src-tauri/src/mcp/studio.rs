@@ -25,7 +25,7 @@ pub fn list() -> Value {
         { "name": "effect_apply", "description": "Put a library effect on clips (default: selection). params override its defaults. One undo step. Returns effect ids on the clips.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "params": { "type": "object" } }, "required": ["id"] } },
         { "name": "tool_run", "description": "Run a library tool on clips (default: selection, else its track settings). params override its defaults. One undo step. Status pending: run again later.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "params": { "type": "object" } }, "required": ["id"] } },
         { "name": "style_apply", "description": "Put a library style (rules for how the video should be edited) into the project rules/style.md; they join your context from the next message.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
-        { "name": "sound_add", "description": "Put a library sound on the timeline so that its hit lands on a frame (synthesized once into media/sfx). track default: last audio track; volume 0–2.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frame": { "type": "integer" }, "track": { "type": "string" }, "volume": { "type": "number" } }, "required": ["id", "frame"] } },
+        { "name": "sound_add", "description": "Put a library sound on the timeline so that its hit lands on each of frames (synthesized once into media/sfx), one call for all frames. track default: last audio track; volume 0–2.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frames": { "type": "array", "items": { "type": "integer" } }, "track": { "type": "string" }, "volume": { "type": "number" } }, "required": ["id", "frames"] } },
         { "name": "speech_transcribe", "description": "What is said in a media file or on a clip, phrase by phrase (local model, cached). path — seconds in the file; clip — timeline frames, only what is audible. Status pending: call again.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "clip": { "type": "string" }, "language": { "type": "string" } } } },
         { "name": "speech_find", "description": "Find words in already transcribed clips: timeline frames where they are said.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } },
         { "name": "audio_analyze", "description": "Loudness (LUFS, peak, range) and pauses of a media file.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "threshold": { "type": "number" }, "min_pause": { "type": "number" } }, "required": ["path"] } },
@@ -137,8 +137,8 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
             }
             "sound_add" => {
                 let id = args["id"].as_str().ok_or("id required")?;
-                let frame = args["frame"].as_u64().and_then(|f| u32::try_from(f).ok()).ok_or("frame required")?;
-                presets::sound_add(app, id, frame, args["track"].as_str(), args["volume"].as_f64(), &turn_label(app)).map(|c| format!("ok: {c}")).map_err(|e| format!("refused ({}): {}", e.code, e.message))
+                let frames: Vec<u32> = serde_json::from_value(args["frames"].clone()).map_err(|_| "frames required")?;
+                presets::sound_add(app, id, &frames, args["track"].as_str(), args["volume"].as_f64(), &turn_label(app)).map(|c| format!("ok: {}", c.join(","))).map_err(|e| format!("refused ({}): {}", e.code, e.message))
             }
             "speech_transcribe" => {
                 let (dir, doc) = app.state::<ProjectState>().context().ok_or("no project is open")?;

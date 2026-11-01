@@ -628,20 +628,26 @@ pub fn sound_file(app: &AppHandle, dir: &Path, item: &Item) -> AppResult<(String
     Ok((rel, seconds))
 }
 
-/// Поставить звук библиотеки на таймлайн так, чтобы его удар пришелся на кадр `frame`.
-pub fn sound_add(app: &AppHandle, id: &str, frame: u32, track: Option<&str>, volume: Option<f64>, label: &str) -> AppResult<String> {
+/// Поставить звук библиотеки на таймлайн так, чтобы его удар пришелся на кадры `frames` (один шаг
+/// отмены).
+pub fn sound_add(app: &AppHandle, id: &str, frames: &[u32], track: Option<&str>, volume: Option<f64>, label: &str) -> AppResult<Vec<String>> {
     let root = library::root_of(app)?;
     let (item, _) = library::find(&root, id).filter(|(i, _)| i.kind == "sound").ok_or_else(|| bad(format!("sound {id} not found")))?;
     let (dir, doc) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
     let (rel, seconds) = sound_file(app, &dir, &item)?;
     let fps = doc.project.sequence.fps;
     let track = track.map_or_else(|| sfx_track(&doc), str::to_owned);
-    let start = frame.saturating_sub(secs_to_frames(item.hit_at.unwrap_or(0.0), fps));
-    let mut made = String::new();
+    let hit = secs_to_frames(item.hit_at.unwrap_or(0.0), fps);
+    let mut made = Vec::new();
     commit(app, label, |e| {
-        made = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: Some(rel.clone()), text: None, start, duration: secs_to_frames(seconds, fps).max(1), offset: None })?.into_iter().next().unwrap_or_default();
-        if let Some(v) = volume {
-            e.apply(&Op::SetProps { id: made.clone(), props: ClipPropsPatch { volume: Some(v), ..ClipPropsPatch::default() } })?;
+        for frame in frames {
+            let ids = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: Some(rel.clone()), text: None, start: frame.saturating_sub(hit), duration: secs_to_frames(seconds, fps).max(1), offset: None })?;
+            for id in ids {
+                if let Some(v) = volume {
+                    e.apply(&Op::SetProps { id: id.clone(), props: ClipPropsPatch { volume: Some(v), ..ClipPropsPatch::default() } })?;
+                }
+                made.push(id);
+            }
         }
         Ok(())
     })?;
@@ -680,7 +686,7 @@ fn cut_sounds(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
         let (rel, seconds) = sound_file(c.app, c.dir, &item)?;
         sounds.push((rel, secs_to_frames(seconds, c.fps).max(1), secs_to_frames(item.hit_at.unwrap_or(0.0), c.fps)));
     }
-    let track = c.text("track").map_or_else(|| sfx_track(c.doc), str::to_owned);
+    let track = c.text("track").filter(|t| track_kind(c.doc, t) == Some(TrackKind::Audio)).map_or_else(|| sfx_track(c.doc), str::to_owned);
     let every = num(c.p, "every", 1.0).max(1.0) as usize;
     let volume = num(c.p, "volume", 0.5);
     let cuts: Vec<u32> = cut_frames(&clips).into_iter().step_by(every).collect();
@@ -938,7 +944,7 @@ pub fn style_apply(app: AppHandle, id: String, lang: String) -> AppResult<String
 #[tauri::command]
 #[specta::specta]
 pub async fn sound_place(app: AppHandle, id: String, frame: u32) -> AppResult<String> {
-    tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, frame, None, None, "sound")).await.map_err(|e| AppError::new("internal", e.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, &[frame], None, None, "sound").map(|v| v.join(","))).await.map_err(|e| AppError::new("internal", e.to_string()))?
 }
 
 #[tauri::command]
@@ -1036,7 +1042,8 @@ mod tests {
     fn looping_moves_the_head_to_the_end() {
         let mut tracks: Vec<Track> = default_tracks();
         let mut markers: Vec<Marker> = vec![];
-        let mut clips = vec![clip("c1", "v1", 0, 100, 10), clip("c2", "v1", 100, 100, 0)];
+        let video = |id: &str, start, offset| Clip { src: Some("media/footage/a.mp4".into()), ..clip(id, "v1", start, 100, offset) };
+        let mut clips = vec![video("c1", 0, 10), video("c2", 100, 0)];
         let mut e = Edit { tracks: &mut tracks, clips: &mut clips, markers: &mut markers };
         assert!(loop_track(&mut e, "v1", 30, 6).unwrap());
         assert!(!loop_track(&mut e, "a1", 30, 6).unwrap(), "пустая дорожка");

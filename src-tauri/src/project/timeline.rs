@@ -283,6 +283,17 @@ impl Edit<'_> {
         Ok(())
     }
 
+    /// Файл только со звуком на видеодорожке — черный кадр и тишина; картинка на звуковой — тишина.
+    /// Проверяется при правке, а не при чтении: старый проект с таким клипом все равно открывается.
+    fn file_fits(&self, track: &str, src: Option<&str>) -> AppResult<()> {
+        let kind = self.track(track)?.kind;
+        let category = src.and_then(crate::media::category_of);
+        if (kind == TrackKind::Video && category == Some("sfx")) || (kind == TrackKind::Audio && category == Some("images")) {
+            return Err(bad(format!("{} cannot go on track {track}: use {} track", src.unwrap_or(""), if kind == TrackKind::Video { "an audio" } else { "a video" })));
+        }
+        Ok(())
+    }
+
     /// ID клипов группы (связанные видео и звук одного файла), включая сам клип.
     fn group(&self, id: &str) -> AppResult<Vec<String>> {
         let c = self.clips.iter().find(|c| c.id == id).ok_or_else(|| bad(format!("clip {id} not found")))?;
@@ -305,6 +316,7 @@ impl Edit<'_> {
         match op {
             Op::AddClip { track, kind, src, text, start, duration, offset } => {
                 self.unlocked(track)?;
+                self.file_fits(track, src.as_deref())?;
                 let id = next_id(self.clips);
                 self.clips.push(Clip { id: id.clone(), track: track.clone(), kind: *kind, src: src.clone(), text: text.clone(), start: *start, duration: *duration, offset: offset.unwrap_or(0), link: None, props: ClipProps::default(), effects: vec![] });
                 Ok(vec![id])
@@ -329,6 +341,8 @@ impl Edit<'_> {
                 }
                 if let Some(t) = track {
                     self.unlocked(t)?;
+                    let src = self.clip_mut(id)?.src.clone();
+                    self.file_fits(t, src.as_deref())?;
                 }
                 for g in &group {
                     let c = self.clip_mut(g)?;
@@ -563,6 +577,10 @@ mod tests {
         let cap = Op::AddClip { track: "v1".into(), kind: ClipKind::Caption, src: None, text: Some("Hi".into()), start: 0, duration: 30, offset: None };
         assert_eq!(run(&[cap]).2.unwrap_err().code, "invalidEdit");
         assert!(run(&[media("v1", 0, 60), media("v2", 30, 60)]).2.is_ok(), "разные дорожки — можно");
+        let sound = |track: &str, src: &str| Op::AddClip { track: track.into(), kind: ClipKind::Media, src: Some(src.into()), text: None, start: 0, duration: 10, offset: None };
+        assert!(run(&[sound("v1", "media/sfx/a.wav")]).2.is_err(), "звук на видеодорожке");
+        assert!(run(&[sound("a1", "media/images/a.png")]).2.is_err(), "картинка на звуковой");
+        assert!(run(&[sound("a1", "media/footage/a.mp4")]).2.is_ok(), "звук видео на звуковой — можно");
     }
 
     #[test]

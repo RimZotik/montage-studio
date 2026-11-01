@@ -216,6 +216,13 @@ export type ClipFilter = {
 	effect?: string | null,
 };
 
+/**  Как файл ложится в кадр. */
+export type ClipFit = 
+/**  Заполняет кадр, лишнее обрезается. */
+"cover" | 
+/**  Виден целиком, по краям фон или нижние дорожки. */
+"contain";
+
 export type ClipKind = 
 /**  Файл медиа (видео, звук, картинка). */
 "media" | 
@@ -237,6 +244,7 @@ export type ClipPropsPatch = {
 	fadeOut?: number | null,
 	speed?: number | null,
 	volumeKeys?: ([number, number | null])[] | null,
+	fit?: ClipFit | null,
 };
 
 export type ClipProps_Deserialize = {
@@ -259,6 +267,7 @@ export type ClipProps_Deserialize = {
 	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
 	 */
 	volumeKeys?: ([number, number | null])[],
+	fit?: ClipFit,
 };
 
 export type ClipProps_Serialize = {
@@ -281,6 +290,7 @@ export type ClipProps_Serialize = {
 	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
 	 */
 	volumeKeys?: ([number, number | null])[],
+	fit: ClipFit,
 };
 
 export type Clip_Deserialize = {

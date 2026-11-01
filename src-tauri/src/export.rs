@@ -372,6 +372,9 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
 
 /// Кадр таймлайна картинкой: Claude смотрит результат, не трогая окно пользователя.
 pub fn still(app: &AppHandle, frame: u32, scale: f64) -> AppResult<PathBuf> {
+    // По одному: Claude просит кадры пачкой, а несколько браузеров разом не успевают запуститься.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if !engine_ready(&engine_dir(app)?) {
         return Err(AppError::new("renderEngineMissing", "render engine is not installed"));
     }

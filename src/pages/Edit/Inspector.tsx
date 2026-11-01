@@ -97,6 +97,15 @@ export function Inspector({ view, clip, frame, apply, onError, selectedCount, pi
       {audible && <Slider label={t("edit.volume")} value={p.volume} min={0} max={2} step={0.01} unit="%" scale={100} onCommit={(volume) => set({ volume })} />}
       {visual && (
         <>
+          {clip.kind === "media" && (
+            <div className="segrow">
+              {(["cover", "contain"] as const).map((fit) => (
+                <button key={fit} className={p.fit === fit ? "on" : ""} onClick={() => set({ fit })}>
+                  {t(`edit.fit.${fit}`)}
+                </button>
+              ))}
+            </div>
+          )}
           <Slider label={t("edit.opacity")} value={p.opacity} min={0} max={1} step={0.01} unit="%" scale={100} onCommit={(opacity) => set({ opacity })} />
           <Slider label={t("edit.scale")} value={p.scale} min={0.1} max={4} step={0.01} unit="%" scale={100} onCommit={(scale) => set({ scale })} />
           <Slider label="X" value={p.x} min={-view.project.sequence.width} max={view.project.sequence.width} step={1} unit=" px" onCommit={(x) => set({ x })} />

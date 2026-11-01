@@ -443,6 +443,10 @@
         "video": "Everything set here applies to current and new clips of this track.",
         "audio": "Volume and effects of the whole track."
       }
+    },
+    "fit": {
+      "cover": "Fill the frame",
+      "contain": "Show whole"
     }
   },
   "crash": {

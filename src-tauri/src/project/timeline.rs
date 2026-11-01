@@ -130,6 +130,17 @@ pub enum ClipKind {
     Solid,
 }
 
+/// Как файл ложится в кадр.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ClipFit {
+    /// Заполняет кадр, лишнее обрезается.
+    #[default]
+    Cover,
+    /// Виден целиком, по краям фон или нижние дорожки.
+    Contain,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipProps {
@@ -159,6 +170,8 @@ pub struct ClipProps {
     /// Кадры файла, а не клипа: разрез и перенос ее не сбивают.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volume_keys: Vec<(u32, f64)>,
+    #[serde(default)]
+    pub fit: ClipFit,
 }
 
 /// Изменить часть свойств: незаданные остаются как были.
@@ -174,6 +187,7 @@ pub struct ClipPropsPatch {
     pub fade_out: Option<u32>,
     pub speed: Option<f64>,
     pub volume_keys: Option<Vec<(u32, f64)>>,
+    pub fit: Option<ClipFit>,
 }
 
 impl ClipProps {
@@ -186,6 +200,7 @@ impl ClipProps {
         self.fade_in = p.fade_in.unwrap_or(self.fade_in);
         self.fade_out = p.fade_out.unwrap_or(self.fade_out);
         self.speed = p.speed.unwrap_or(self.speed);
+        self.fit = p.fit.unwrap_or(self.fit);
         if let Some(k) = &p.volume_keys {
             self.volume_keys.clone_from(k);
         }
@@ -236,7 +251,7 @@ fn one() -> f64 {
 
 impl Default for ClipProps {
     fn default() -> Self {
-        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0, speed: 1.0, volume_keys: vec![] }
+        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0, speed: 1.0, volume_keys: vec![], fit: ClipFit::default() }
     }
 }
 

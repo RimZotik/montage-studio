@@ -89,6 +89,10 @@ changed or what you need. No lists of steps, no track or clip ids, no tool names
   export or with `captions_file`. Use `file` when the user wants captions for the platform to upload or translate;
   platforms show them in their own style, so fancy looks need `burned`.
 
+## Screenshots and cards
+A clip fills the frame and crops by default. To show a screenshot or card whole, set `fit:"contain"`, with `scale`,
+`x`, `y` to place it, over a background on a lower track.
+
 ## Previews
 A saved tool or sound gets a card preview with `library_preview`: loudness bars before and after for audio,
 clip lengths for cutting tools, two `render_frame` pictures for a real example. Effects preview themselves.

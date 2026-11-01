@@ -19,7 +19,7 @@ const IMAGE = /\.(png|jpe?g|webp|gif|svg|bmp)$/i;
 /** Свойства клипа со значениями по умолчанию (в файле поля могут отсутствовать). */
 export function propsOf(clip: Clip) {
   const p = clip.props;
-  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0, speed: p?.speed ?? 1, volumeKeys: p?.volumeKeys ?? [] };
+  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0, speed: p?.speed ?? 1, volumeKeys: p?.volumeKeys ?? [], fit: p?.fit ?? "cover" };
 }
 
 /** Плавное появление и исчезновение (0–1) по кадру внутри клипа. */
@@ -100,7 +100,7 @@ function VisualRun({ run, srcOf, muted, trackVolume }: { run: Run; srcOf: (p: st
   return (
     <AbsoluteFill style={style}>
       {IMAGE.test(run.src) ? (
-        <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <Img src={src} style={{ width: "100%", height: "100%", objectFit: p.fit }} />
       ) : (
         <Clip
           src={src}
@@ -110,7 +110,7 @@ function VisualRun({ run, srcOf, muted, trackVolume }: { run: Run; srcOf: (p: st
             if (muted) return 0;
             return loudnessAt(partAt(run, f), run.start + f, fps, trackVolume);
           }}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: p.fit }}
         />
       )}
     </AbsoluteFill>

@@ -73,6 +73,18 @@ pub fn category_of(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Звук по имени файла: так голос и музыка сразу ложатся в свои папки.
+pub fn audio_hint(name: &str) -> Option<&'static str> {
+    let n = name.to_lowercase();
+    if ["voice", "голос", "озвуч", "дикт", "narrat", "vo_", "vo-"].iter().any(|w| n.contains(w)) {
+        return Some("voice");
+    }
+    if ["music", "музык", "track", "трек", "song", "beat", "бит", "phonk", "фонк"].iter().any(|w| n.contains(w)) {
+        return Some("music");
+    }
+    None
+}
+
 /// Свободное имя в папке: `clip.mp4`, `clip-2.mp4`, …
 fn free_name(dir: &Path, name: &str) -> PathBuf {
     let (stem, ext) = name.rsplit_once('.').map_or((name, String::new()), |(s, e)| (s, format!(".{e}")));
@@ -220,8 +232,12 @@ pub fn import(dir: &Path, files: &[String], ffprobe: Option<&Path>) -> AppResult
         if !src.is_file() {
             continue;
         }
-        if cat == "sfx" && ffprobe.and_then(|fp| probe(fp, src)).and_then(|p| p.duration_s).is_some_and(|d| d >= MUSIC_FROM_S) {
-            cat = "music";
+        if cat == "sfx" {
+            if let Some(hint) = audio_hint(&name) {
+                cat = hint;
+            } else if ffprobe.and_then(|fp| probe(fp, src)).and_then(|p| p.duration_s).is_some_and(|d| d >= MUSIC_FROM_S) {
+                cat = "music";
+            }
         }
         let target_dir = dir.join("media").join(cat);
         std::fs::create_dir_all(&target_dir)?;
@@ -356,6 +372,13 @@ pub fn media_move(project: State<'_, ProjectState>, path: String, category: Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn audio_names_give_a_hint() {
+        assert_eq!(audio_hint("Голос дубль 2.wav"), Some("voice"));
+        assert_eq!(audio_hint("phonk_mix.mp3"), Some("music"));
+        assert_eq!(audio_hint("boom.wav"), None);
+    }
 
     #[test]
     fn categories_and_free_names() {

@@ -525,3 +525,24 @@ input { font: inherit; color: inherit; }
 .ctlpanel .sl .k { grid-column: 1 / -1; width: auto; font-size: 11.5px; color: var(--muted); }
 .ctlpanel .sl input[type="range"] { width: 100%; min-width: 0; }
 .ctlpanel .sl .v { min-width: 44px; text-align: right; font-size: 11px; }
+
+/* Чат: действия одной строкой */
+.m-tools { display: flex; flex-direction: column; gap: 2px; align-self: stretch; }
+.m-toolhead { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 22px; padding: 0 6px 0 4px; border-radius: 6px; font-size: 12px; line-height: 1; color: var(--muted); }
+.m-toolhead > span { line-height: 1.2; }
+.m-toolhead:hover { background: var(--hover); }
+.m-toolhead.err { color: var(--danger); }
+.m-chev { transition: transform .12s ease; color: var(--faint); }
+.m-chev.open { transform: rotate(90deg); }
+.undoturn { display: inline-flex; height: 28px; align-self: flex-start; margin: 4px 0; }
+.input textarea { field-sizing: content; min-height: 22px; max-height: 180px; }
+.inrow .faint { opacity: 0; transition: opacity .12s; }
+.input:focus-within .inrow .faint { opacity: 1; }
+.sendbtn { width: 30px; height: 30px; }
+.fxlist { padding-bottom: 12px; }
+.prepare .rules { container: rules / inline-size; }
+.rtabs { overflow: hidden; }
+.rtabs .colhead, .rtabs button { white-space: nowrap; flex: none; }
+@container rules (max-width: 620px) {
+  .rtabs .colhead, .rstate { display: none; }
+}

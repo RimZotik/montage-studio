@@ -325,7 +325,7 @@ export function App() {
           </div>
         )}
         <div className="pb-right">
-          {!project && (
+          {!project && tab !== "library" && (
             <label className="search">
               <Search size={14} strokeWidth={1.75} />
               <input placeholder={t("search.projects")} value={query} onChange={(e) => setQuery(e.target.value)} />

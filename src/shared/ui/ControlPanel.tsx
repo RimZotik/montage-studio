@@ -13,6 +13,14 @@ export function loc(v: unknown, lang: string): string {
   return "";
 }
 
+const UNITS_RU: Record<string, string> = { s: "с", ms: "мс", Hz: "Гц", dB: "дБ", px: "px" };
+
+/** Единица измерения на языке интерфейса. */
+function unitOf(u: unknown, lang: string): string {
+  const text = loc(u, lang);
+  return lang === "ru" ? (UNITS_RU[text] ?? text) : text;
+}
+
 /** Значения панели по умолчанию. */
 export function defaultsOf(controls: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -83,7 +91,7 @@ export function ControlPanel({ controls, values, tracks, onChange }: { controls:
               </p>
             );
           case "slider":
-            return <Slider key={key} label={label} help={help} value={Number(val(c) ?? c.min)} min={c.min} max={c.max} step={c.step ?? (c.max - c.min) / 100} unit={c.unit ? ` ${c.unit}` : ""} onCommit={(v) => onChange(c.id, v)} />;
+            return <Slider key={key} label={label} help={help} value={Number(val(c) ?? c.min)} min={c.min} max={c.max} step={c.step ?? (c.max - c.min) / 100} unit={c.unit ? ` ${unitOf(c.unit, lang)}` : ""} onCommit={(v) => onChange(c.id, v)} />;
           case "toggle":
             return (
               <label key={key} className={`ctl check ${wide}`} title={help}>
@@ -129,7 +137,7 @@ export function ControlPanel({ controls, values, tracks, onChange }: { controls:
               <label key={key} className={`ctl ${wide}`} title={help}>
                 <span className="k">
                   {label}
-                  {c.unit ? `, ${c.unit}` : ""}
+                  {c.unit ? `, ${unitOf(c.unit, lang)}` : ""}
                 </span>
                 <Field type="number" value={String(val(c) ?? 0)} min={c.min} max={c.max} step={c.step} onCommit={(v) => onChange(c.id, Number(v))} />
               </label>

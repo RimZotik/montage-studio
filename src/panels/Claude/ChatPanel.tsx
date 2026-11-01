@@ -1,4 +1,4 @@
-import { ArrowUp, Check, CircleAlert, FilePen, FileSearch, FolderSearch, Loader, Pencil, Plus, Square, X } from "lucide-react";
+import { ArrowUp, Check, ChevronRight, CircleAlert, FilePen, FileSearch, FolderSearch, Loader, Pencil, Plus, Square, Undo2, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { useTranslation } from "react-i18next";
@@ -15,12 +15,15 @@ type Item =
   | { k: "decision"; text: string }
   | { k: "error"; text: string };
 
+/** Инструменты, которые меняют таймлайн (их можно отменить одним ходом). */
+const EDITS = new Set(["timeline_apply", "effect_apply", "tool_run", "sound_add"].map((n) => `mcp__studio__${n}`));
+
 /** Правил ли Claude таймлайн в ходе, который закончился строкой `end`. */
 function turnEdited(items: Item[], end: number): boolean {
   for (let j = end - 1; j >= 0; j--) {
     const y = items[j];
     if (!y || y.k === "user") return false;
-    if (y.k === "tool" && y.name === "mcp__studio__timeline_apply") return true;
+    if (y.k === "tool" && EDITS.has(y.name)) return true;
   }
   return false;
 }
@@ -53,6 +56,36 @@ const TOOL_ICON: Record<string, ReactNode> = {
   Edit: <FilePen size={12} strokeWidth={1.75} />,
   Write: <FilePen size={12} strokeWidth={1.75} />,
 };
+
+type ToolItem = Extract<Item, { k: "tool" }>;
+
+/** Действия Claude одной свернутой строкой: идет работа — последнее действие, готово — число;
+ *  подробности по нажатию, ошибка раскрывает сразу. */
+function ToolGroup({ tools }: { tools: ToolItem[] }) {
+  const { t } = useTranslation();
+  const failed = tools.some((x) => x.state === "err");
+  const [open, setOpen] = useState(false);
+  const running = tools.find((x) => x.state === "run");
+  const label = (x: ToolItem) => t(`chat.tool.${x.name.replace("mcp__studio__", "")}`, { defaultValue: x.name.replace("mcp__studio__", "") });
+  const last = running ?? tools[tools.length - 1];
+  const expanded = open || failed;
+  return (
+    <div className="m-tools">
+      <button className={`m-toolhead ${failed ? "err" : ""}`} onClick={() => setOpen((o) => !o)}>
+        {running ? <Loader size={12} strokeWidth={1.75} className="spin" /> : failed ? <CircleAlert size={12} strokeWidth={1.75} /> : <Check size={12} strokeWidth={1.75} />}
+        <span>{running && last ? label(last) : t("chat.actions", { count: tools.length })}</span>
+        <ChevronRight size={12} strokeWidth={1.75} className={`m-chev ${expanded ? "open" : ""}`} />
+      </button>
+      {expanded && tools.map((x, i) => (
+        <div key={`${x.id}-${i}`} className={`m-tool ${x.state}`} title={x.summary}>
+          {x.state === "run" ? <Loader size={12} strokeWidth={1.75} className="spin" /> : x.state === "err" ? <X size={12} strokeWidth={1.75} /> : TOOL_ICON[x.name] ?? <Check size={12} strokeWidth={1.75} />}
+          <span>{label(x)}</span>
+          <span className="mono">{x.summary}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function ProposalCard({ p, verdict, onDecide }: { p: Proposal; verdict?: string; onDecide: (text: string) => void }) {
   const { t } = useTranslation();
@@ -133,7 +166,7 @@ function AskCard({ a, answer, onDecide }: { a: Ask; answer?: string; onDecide: (
 
 /** Панель чата с Claude в открытом проекте (docs/claude-bridge.md). */
 export function ChatPanel({ projectPath, onError, width }: { projectPath: string; onError: (e: AppError) => void; width: number }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [items, setItems] = useState<Item[]>([]);
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string | null>(null);
@@ -219,8 +252,6 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
     }
   };
 
-  const fmt = (n: number) => n.toLocaleString(i18n.language);
-
   return (
     <aside className="chat" style={{ width }}>
       <div className="chathead">
@@ -267,14 +298,13 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
               {x.text}
             </div>
           ) : null;
-          if (x.k === "tool")
-            return (
-              <div key={key} className={`m-tool ${x.state}`} title={x.summary}>
-                {x.state === "run" ? <Loader size={12} strokeWidth={1.75} className="spin" /> : x.state === "err" ? <X size={12} strokeWidth={1.75} /> : TOOL_ICON[x.name] ?? <Check size={12} strokeWidth={1.75} />}
-                <span>{t(`chat.tool.${x.name}`, { defaultValue: x.name })}</span>
-                <span className="mono">{x.summary}</span>
-              </div>
-            );
+          if (x.k === "tool") {
+            // Группа рисуется на первом действии подряд, остальные — внутри нее.
+            if (items[i - 1]?.k === "tool") return null;
+            const tools: ToolItem[] = [];
+            for (let j = i; items[j]?.k === "tool"; j++) tools.push(items[j] as ToolItem);
+            return <ToolGroup key={key} tools={tools} />;
+          }
           if (x.k === "turn")
             return (
               <div key={key}>
@@ -292,12 +322,13 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
                   </div>
                 )}
                 {x.ok && !x.interrupted && i === items.length - 1 && turnEdited(items, i) && (
-                  <button className="link undoturn" onClick={() => void ipc.projectUndoClaude().then((r) => r.status === "error" && onError(r.error))}>
+                  <button className="btn undoturn" onClick={() => void ipc.projectUndoClaude().then((r) => r.status === "error" && onError(r.error))}>
+                    <Undo2 size={13} strokeWidth={1.75} />
                     {t("chat.undoTurn")}
                   </button>
                 )}
                 <div className="m-turn">
-                  {x.interrupted ? t("chat.stopped") : `${(x.durationMs / 1000).toFixed(1)} ${t("chat.sec")} · ${fmt(Math.round((x.inputTokens + x.outputTokens) / 1000))}k ${t("chat.tokens")}${x.costUsd ? ` · ≈${x.costUsd.toFixed(3)} $` : ""}`}
+                  {x.interrupted ? t("chat.stopped") : `${(x.durationMs / 1000).toFixed(1)} ${t("chat.sec")}${x.costUsd ? ` · ≈${x.costUsd.toFixed(2)} $` : ""}`}
                 </div>
               </div>
             );
@@ -322,7 +353,7 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
         <textarea
           placeholder={t("chat.placeholder")}
           value={text}
-          rows={3}
+          rows={1}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

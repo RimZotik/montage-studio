@@ -242,7 +242,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
                     <span className="h l" onPointerDown={(e) => onClipDown(e, c, "trimL")} />
                     {c.link && <Link2 className="lnk" size={11} strokeWidth={2} />}
                     {!!c.effects?.length && <Sparkles className="lnk fxmark" size={11} strokeWidth={2} />}
-                    <span className="cl">{label}</span>
+                    {duration * zoom > 34 && <span className="cl">{label}</span>}
                     <span className="h r" onPointerDown={(e) => onClipDown(e, c, "trimR")} />
                   </div>
                 );

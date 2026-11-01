@@ -101,8 +101,8 @@ export function Inspector({ view, clip, frame, apply, onError }: { view: Project
         </>
       )}
       {audible && <Slider label={t("edit.speed")} value={p.speed} min={0.1} max={4} step={0.05} unit="%" scale={100} onCommit={(speed) => set({ speed })} />}
-      <Slider label={t("edit.fadeIn")} value={p.fadeIn} min={0} max={Math.min(fps * 3, clip.duration)} step={1} unit={` ${t("edit.fr")}`} onCommit={(fadeIn) => set({ fadeIn })} />
-      <Slider label={t("edit.fadeOut")} value={p.fadeOut} min={0} max={Math.min(fps * 3, clip.duration)} step={1} unit={` ${t("edit.fr")}`} onCommit={(fadeOut) => set({ fadeOut })} />
+      <Slider label={t("edit.fadeIn")} value={p.fadeIn} min={0} max={Math.min(fps * 3, clip.duration)} step={1} scale={1 / fps} unit={` ${t("chat.sec")}`} onCommit={(fadeIn) => set({ fadeIn })} />
+      <Slider label={t("edit.fadeOut")} value={p.fadeOut} min={0} max={Math.min(fps * 3, clip.duration)} step={1} scale={1 / fps} unit={` ${t("chat.sec")}`} onCommit={(fadeOut) => set({ fadeOut })} />
       {track?.kind === "audio" && <Slider label={t("edit.trackVolume", { name: track.name })} value={track.volume ?? 1} min={0} max={2} step={0.01} unit="%" scale={100} onCommit={(volume) => void apply([{ op: "setTrack", id: track.id, muted: null, locked: null, volume }], "track")} />}
       {!!clip.effects?.length && <div className="ctlsec">{t("library.applied")}</div>}
       {clip.effects?.map((fx) => <EffectCard key={fx.id} clip={clip} fx={fx} view={view} apply={apply} lang={i18n.language} onError={onError} />)}

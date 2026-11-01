@@ -12,7 +12,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use specta::Type;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 
 use crate::db::Db;
@@ -170,10 +170,18 @@ impl ProjectState {
 
 #[tauri::command]
 #[specta::specta]
-pub fn project_load(app: AppHandle, state: State<'_, ProjectState>, db: State<'_, Db>, path: String) -> AppResult<ProjectView> {
+pub fn project_load(app: AppHandle, path: String) -> AppResult<ProjectView> {
+    open(&app, &path)
+}
+
+/// Открыть проект (из интерфейса или инструментов разработчика).
+pub fn open(app: &AppHandle, path: &str) -> AppResult<ProjectView> {
+    let state = app.state::<ProjectState>();
+    let db = app.state::<Db>();
+    let path = path.to_owned();
     let dir = PathBuf::from(&path);
     let doc = load(&dir)?;
-    if let Some(chat) = tauri::Manager::try_state::<crate::chat::ChatState>(&app) {
+    if let Some(chat) = app.try_state::<crate::chat::ChatState>() {
         crate::chat::shutdown(&chat);
     }
     let seq = &doc.project.sequence;
@@ -184,7 +192,7 @@ pub fn project_load(app: AppHandle, state: State<'_, ProjectState>, db: State<'_
         guard.as_ref().map(Open::view)
     };
     log::info!("project loaded: {path}");
-    emit(&app, view.clone());
+    emit(app, view.clone());
     view.ok_or_else(|| AppError::new("internal", "project vanished"))
 }
 

@@ -2339,10 +2339,11 @@ dependencies = [
 
 [[package]]
 name = "montage-studio"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "futures-util",
  "log",
+ "png",
  "reqwest",
  "rusqlite",
  "rustls",
@@ -2364,6 +2365,7 @@ dependencies = [
  "tiny_http",
  "tokio",
  "which",
+ "windows",
  "zip 4.6.1",
 ]
 

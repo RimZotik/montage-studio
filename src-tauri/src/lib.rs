@@ -41,6 +41,29 @@ fn logging() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .build()
 }
 
+/// Показать главное окно: обычно — развернутым и в фокусе; `MONTAGE_BACKGROUND=1` (проверки
+/// разработчика) — за пределами экрана и без фокуса, чтобы не мешать пользователю.
+fn show_main(app: &tauri::AppHandle) {
+    let Some(w) = app.get_webview_window("main") else { return };
+    if std::env::var("MONTAGE_BACKGROUND").is_ok_and(|v| v == "1") {
+        let _ = w.set_size(tauri::PhysicalSize::new(1600, 900));
+        let _ = w.set_position(tauri::PhysicalPosition::new(-4000, 0));
+        #[cfg(windows)]
+        if let Ok(h) = w.hwnd() {
+            use windows::Win32::UI::WindowsAndMessaging::{SW_SHOWNOACTIVATE, ShowWindow};
+            // Показать, не забирая фокус.
+            unsafe {
+                let _ = ShowWindow(windows::Win32::Foundation::HWND(h.0), SW_SHOWNOACTIVATE);
+            }
+        }
+        log::info!("main window shown in background mode");
+        return;
+    }
+    let _ = w.maximize();
+    let _ = w.show();
+    let _ = w.set_focus();
+}
+
 pub fn run() {
     // Паника в любом потоке — в журнал (иначе в выпуске без консоли ее не увидеть).
     std::panic::set_hook(Box::new(|info| log::error!("panic: {info}")));
@@ -51,8 +74,11 @@ pub fn run() {
     tauri::Builder::default()
         // Первым: второй запуск поднимает уже открытое окно, а не открывает новое.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Второй запуск — поднять открытое окно (и вернуть на экран, если оно было в фоне).
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
+                let _ = window.maximize();
+                let _ = window.show();
                 let _ = window.set_focus();
             }
         }))
@@ -76,15 +102,16 @@ pub fn run() {
             app.manage(settings::SettingsState::load(config.join("settings.json")));
             app.manage(db::Db::open(&config.join("studio.db")).map_err(|e| e.message)?);
             log::info!("Montage Studio {} started; config={}", app.package_info().version, config.display());
+            show_main(app.handle());
             updates::start(app.handle());
             // MCP-сервер студии для Claude (адрес и ключ — в mcp.json чата проекта).
-            let info = mcp::start(app.handle());
+            let info = mcp::start_app(app.handle());
             // Сборка разработки (или MONTAGE_MCP_EXPOSE=1): адрес и ключ — в mcp-dev.json, чтобы
             // внешний Claude мог проверять студию теми же инструментами.
             if let Some(i) = &info
                 && (cfg!(debug_assertions) || std::env::var("MONTAGE_MCP_EXPOSE").is_ok_and(|v| v == "1"))
             {
-                let _ = std::fs::write(config.join("mcp-dev.json"), serde_json::json!({ "url": i.url, "token": i.token }).to_string());
+                let _ = std::fs::write(config.join("mcp-dev.json"), serde_json::json!({ "url": i.url, "token": i.dev_token }).to_string());
             }
             *app.state::<mcp::McpState>().info.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = info;
             Ok(())

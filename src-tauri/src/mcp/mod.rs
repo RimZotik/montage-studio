@@ -3,6 +3,7 @@
 //! (`tools.rs`) работают с проектом через сервис проекта и с интерфейсом через события — тем же
 //! путем, что и действия пользователя. Ответы короткие и текстовые — экономия токенов.
 
+mod dev;
 mod tools;
 
 use std::io::Read;
@@ -18,6 +19,8 @@ use tauri::AppHandle;
 pub struct McpInfo {
     pub url: String,
     pub token: String,
+    /// Ключ разработчика: те же инструменты и `dev_*` (только в `mcp-dev.json`).
+    pub dev_token: String,
 }
 
 /// Что интерфейс сообщил о себе (головка, выделение, вкладка) — для `project_summary`.
@@ -71,8 +74,9 @@ fn error(id: &Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
-/// Обработать одно сообщение JSON-RPC; `None` — уведомление (ответа нет).
-pub fn handle<R: tauri::Runtime>(app: &AppHandle<R>, msg: &Value) -> Option<Value> {
+/// Обработать одно сообщение JSON-RPC (`None` — уведомление, ответа нет). `extra` — список
+/// дополнительных инструментов (разработчика), `extra_call` — их вызов (`None` — не его).
+fn handle_with<R: tauri::Runtime>(app: &AppHandle<R>, msg: &Value, extra_call: impl Fn(&str, &Value) -> Option<Result<String, String>>, extra: Option<Value>) -> Option<Value> {
     let id = msg.get("id")?.clone();
     let method = msg["method"].as_str().unwrap_or("");
     Some(match method {
@@ -85,11 +89,18 @@ pub fn handle<R: tauri::Runtime>(app: &AppHandle<R>, msg: &Value) -> Option<Valu
             }),
         ),
         "ping" => reply(&id, json!({})),
-        "tools/list" => reply(&id, json!({ "tools": tools::list() })),
+        "tools/list" => {
+            let mut all = tools::list();
+            if let (Some(list), Some(more)) = (all.as_array_mut(), extra.as_ref().and_then(Value::as_array)) {
+                list.extend(more.iter().cloned());
+            }
+            reply(&id, json!({ "tools": all }))
+        }
         "tools/call" => {
             let name = msg["params"]["name"].as_str().unwrap_or("");
             let args = msg["params"]["arguments"].clone();
-            let (text, is_error) = match tools::call(app, name, &args) {
+            let result = extra_call(name, &args).unwrap_or_else(|| tools::call(app, name, &args));
+            let (text, is_error) = match result {
                 Ok(t) => (t, false),
                 Err(e) => (e, true),
             };
@@ -101,14 +112,28 @@ pub fn handle<R: tauri::Runtime>(app: &AppHandle<R>, msg: &Value) -> Option<Valu
 }
 
 /// Запустить сервер в отдельном потоке.
+/// Запустить сервер без инструментов разработчика (тесты с тестовым приложением).
+#[cfg(test)]
 pub fn start<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<McpInfo> {
+    start_with(app, |_, _, _| None)
+}
+
+/// Сервер приложения: с инструментами разработчика по их ключу.
+pub fn start_app(app: &AppHandle) -> Option<McpInfo> {
+    let dev_app = app.clone();
+    start_with(app, move |name, args, dev| if dev && name.starts_with("dev_") { Some(dev::call(&dev_app, name, args)) } else { None })
+}
+
+fn start_with<R: tauri::Runtime>(app: &AppHandle<R>, extra: impl Fn(&str, &Value, bool) -> Option<Result<String, String>> + Send + 'static) -> Option<McpInfo> {
     let server = tiny_http::Server::http("127.0.0.1:0").map_err(|e| log::warn!("mcp server: {e}")).ok()?;
     let port = server.server_addr().to_ip().map(|a| a.port())?;
-    let info = McpInfo { url: format!("http://127.0.0.1:{port}/mcp"), token: random_token() };
-    let (app2, token) = (app.clone(), info.token.clone());
+    let info = McpInfo { url: format!("http://127.0.0.1:{port}/mcp"), token: random_token(), dev_token: random_token() };
+    let (app2, token, dev_token) = (app.clone(), info.token.clone(), info.dev_token.clone());
     std::thread::spawn(move || {
         for mut req in server.incoming_requests() {
-            let authorized = req.headers().iter().any(|h| h.field.equiv("Authorization") && h.value.as_str() == format!("Bearer {token}"));
+            let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str().to_owned()).unwrap_or_default();
+            let dev = auth == format!("Bearer {dev_token}");
+            let authorized = dev || auth == format!("Bearer {token}");
             if !authorized {
                 let _ = req.respond(tiny_http::Response::empty(401));
                 continue;
@@ -127,7 +152,9 @@ pub fn start<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<McpInfo> {
                 continue;
             };
             // Ошибка в одном вызове не останавливает сервер.
-            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle(&app2, &msg))).unwrap_or_else(|_| msg.get("id").map(|id| error(id, -32603, "internal error")));
+            let dev_list = dev.then(dev::list);
+            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_with(&app2, &msg, |n, a| extra(n, a, dev), dev_list)))
+                .unwrap_or_else(|_| msg.get("id").map(|id| error(id, -32603, "internal error")));
             let response = match out {
                 Some(out) => {
                     let header = tiny_http::Header::from_bytes("Content-Type", "application/json").ok();

@@ -154,6 +154,9 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
       setItems((all) => {
         const last = all[all.length - 1];
         switch (e.kind) {
+          case "user":
+            // Сообщение пользователя не из поля ввода (инструменты разработчика).
+            return [...all, { k: "user", text: e.text }];
           case "delta":
             if (last?.k === "assistant" && last.streaming) return [...all.slice(0, -1), { ...last, text: last.text + e.text }];
             return [...all, { k: "assistant", text: e.text, streaming: true }];
@@ -171,6 +174,7 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
         }
       });
       if (e.kind === "ready") setModel(e.model);
+      if (e.kind === "user") setBusy(true);
       if (e.kind === "turn") setBusy(false);
     });
     return () => void off.then((f) => f());

@@ -216,7 +216,15 @@ pub fn shutdown(state: &ChatState) {
 /// отметкой на карточке, а не сообщением).
 #[tauri::command]
 #[specta::specta]
-pub fn chat_send(app: AppHandle, chat: State<'_, ChatState>, project: State<'_, ProjectState>, text: String, kind: String) -> AppResult<()> {
+pub fn chat_send(app: AppHandle, text: String, kind: String) -> AppResult<()> {
+    send(&app, &text, &kind)
+}
+
+/// Отправить сообщение в чат открытого проекта (из интерфейса или как пользователь — из
+/// инструментов разработчика).
+pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
+    let chat = app.state::<ChatState>();
+    let project = app.state::<ProjectState>();
     let (dir, doc) = project.context().ok_or_else(|| AppError::new("noProject", "no project"))?;
     let cdir = claude_dir(&dir);
     std::fs::create_dir_all(&cdir)?;
@@ -238,14 +246,14 @@ pub fn chat_send(app: AppHandle, chat: State<'_, ChatState>, project: State<'_, 
         if let Some(mut old) = guard.take() {
             kill(&mut old);
         }
-        *guard = Some(spawn(&app, &dir, &system_path, hash, Arc::clone(&chat.busy))?);
+        *guard = Some(spawn(app, &dir, &system_path, hash, Arc::clone(&chat.busy))?);
     }
     let session = guard.as_mut().ok_or_else(|| AppError::new("internal", "no session"))?;
     let content = format!("{}{}", prompt::turn_context(&doc), text);
     let line = serde_json::json!({ "type": "user", "message": { "role": "user", "content": content } });
     writeln!(session.stdin, "{line}").and_then(|()| session.stdin.flush()).map_err(|e| AppError::new("claudeStart", e.to_string()))?;
     chat.busy.store(true, std::sync::atomic::Ordering::SeqCst);
-    log_item(&dir, if kind == "decision" { "decision" } else { "user" }, &text);
+    log_item(&dir, if kind == "decision" { "decision" } else { "user" }, text);
     // Новый ход: правки Claude в нем подписываются `claude#N` (отмена хода одним действием).
     if let Some(mcp) = app.try_state::<crate::mcp::McpState>() {
         mcp.turn.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -283,6 +291,12 @@ pub fn chat_history(project: State<'_, ProjectState>) -> Vec<ChatItem> {
     let Ok(raw) = std::fs::read_to_string(claude_dir(&dir).join("chat.jsonl")) else { return vec![] };
     let items: Vec<ChatItem> = raw.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
     items.into_iter().rev().take(400).collect::<Vec<_>>().into_iter().rev().collect()
+}
+
+impl ChatState {
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(std::sync::atomic::Ordering::SeqCst)
+    }
 }
 
 /// Идет ли ответ сейчас.

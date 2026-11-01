@@ -11,7 +11,7 @@ import { useDragMedia } from "./dragMedia";
 import { EffectsColumn } from "./EffectsColumn";
 import { Inspector } from "./Inspector";
 import { Monitor } from "./Monitor";
-import { Timeline } from "./Timeline";
+import { type EditTool, Timeline, type TimelineActions } from "./Timeline";
 
 const WIDTHS = { media: 280, inspector: 300, timeline: 300 };
 const FILL = { flex: 1, minHeight: 0 };
@@ -30,6 +30,14 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [w, setW] = useWidths("edit", WIDTHS);
   const [left, setLeft] = useState<"media" | "effects">("media");
+  const [tool, setTool] = useState<EditTool>("select");
+  const [snapOn, setSnapOn] = useState(true);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 3500);
+    return () => clearTimeout(t);
+  }, [note]);
   const drag = useDragMedia();
 
   const total = useMemo(() => Math.max(fps * 5, ...view.clips.map((c) => c.start + c.duration)), [view.clips, fps]);
@@ -72,7 +80,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
         onError(r.error);
         return false;
       }
-      if (ops[0]?.op === "addClip" && r.data[0]) setSelected([r.data[0]]);
+      if ((ops[0]?.op === "addClip" || ops[0]?.op === "duplicateClips") && r.data[0]) setSelected(ops[0].op === "addClip" ? [r.data[0]] : r.data);
       return true;
     },
     [onError],
@@ -81,14 +89,56 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   // Удаленные клипы не остаются выделенными.
   useEffect(() => setSelected((s) => s.filter((id) => view.clips.some((c) => c.id === id))), [view.clips]);
 
+  const unlocked = useCallback((id: string) => !view.tracks.find((t) => t.id === id)?.locked, [view.tracks]);
+  const actions: TimelineActions = useMemo(
+    () => ({
+      split: () => {
+        // Связанные режутся вместе: по одной операции на связку.
+        const pool = view.clips.filter((c) => frame > c.start && frame < c.start + c.duration && unlocked(c.track) && (!selected.length || selected.includes(c.id)));
+        const links = new Set<string>();
+        const ops: Op[] = [];
+        for (const c of pool) {
+          if (c.link && links.has(c.link)) continue;
+          if (c.link) links.add(c.link);
+          ops.push({ op: "splitClip", id: c.id, at: frame });
+        }
+        if (ops.length) void apply(ops, "split");
+      },
+      remove: (ripple) => {
+        if (selected.length) void apply([{ op: "deleteClips", ids: selected, ripple }], "delete");
+      },
+      marker: (at) => void apply([{ op: "addMarker", frame: at ?? frame, label: "" }], "marker"),
+      text: (at) => {
+        const track = view.tracks.find((t) => t.kind === "captions");
+        if (track) void apply([{ op: "addClip", track: track.id, kind: "caption", src: null, text: t("edit.caption"), start: at ?? frame, duration: fps * 2, offset: null }], "text");
+      },
+      duplicate: () => {
+        if (selected.length) void apply([{ op: "duplicateClips", ids: selected, at: null }], "duplicate");
+      },
+      selectAll: () => setSelected(view.clips.map((c) => c.id)),
+    }),
+    [apply, fps, frame, selected, t, unlocked, view.clips, view.tracks],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (typingTarget(e.target) || e.ctrlKey || e.altKey) {
-        if (e.ctrlKey && e.code === "KeyK") e.preventDefault();
-        else return;
+      // Открытое окно поверх страницы забирает клавиши себе.
+      if (document.querySelector(".overlay")) return;
+      if (typingTarget(e.target)) return;
+      if (e.altKey) return;
+      if (e.ctrlKey) {
+        if (e.code === "KeyA") {
+          e.preventDefault();
+          actions.selectAll();
+        } else if (e.code === "KeyD") {
+          e.preventDefault();
+          actions.duplicate();
+        } else if (e.code === "KeyK") {
+          e.preventDefault();
+          actions.split();
+        }
+        return;
       }
-      const under = view.clips.filter((c) => frame > c.start && frame < c.start + c.duration);
-      const targets = selected.length ? view.clips.filter((c) => selected.includes(c.id) && frame > c.start && frame < c.start + c.duration) : under;
       switch (e.code) {
         case "Space":
           e.preventDefault();
@@ -108,14 +158,30 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
           break;
         case "KeyS":
         case "KeyK":
-          if (targets.length) void apply(targets.map((c) => ({ op: "splitClip", id: c.id, at: frame })), "split");
+          actions.split();
           break;
         case "Delete":
         case "Backspace":
-          if (selected.length) void apply([{ op: "deleteClips", ids: selected, ripple: e.shiftKey }], "delete");
+          actions.remove(e.shiftKey);
           break;
         case "KeyM":
-          void apply([{ op: "addMarker", frame, label: "" }], "marker");
+          actions.marker();
+          break;
+        case "KeyV":
+          setTool("select");
+          break;
+        case "KeyC":
+          setTool("razor");
+          break;
+        case "KeyN":
+          setSnapOn((s) => !s);
+          break;
+        case "KeyT":
+          actions.text();
+          break;
+        case "Escape":
+          setTool("select");
+          setSelected([]);
           break;
         case "Equal":
         case "NumpadAdd":
@@ -131,7 +197,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [apply, frame, fps, seek, selected, total, view.clips]);
+  }, [actions, frame, fps, seek, total]);
 
   // Команды Claude интерфейсу: головка и выделение.
   useEffect(() => {
@@ -147,6 +213,8 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
     const t = setTimeout(() => void ipc.uiStateReport({ frame, selected, tab: "edit" }), 250);
     return () => clearTimeout(t);
   }, [frame, selected]);
+
+  const openEffects = useCallback(() => setLeft("effects"), []);
 
   // Свойства — у клипа, по которому щелкнули (у связки выделены оба, первым — он).
   const first = view.clips.find((c) => c.id === selected[0]) ?? null;
@@ -185,11 +253,12 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
             </button>
           </div>
         )}
-        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} />
+        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} tool={tool} onTool={setTool} snapOn={snapOn} onSnap={setSnapOn} actions={actions} onOpenEffects={openEffects} onNote={setNote} />
+        {note && <div className="tlnote">{note}</div>}
       </div>
       {drag && (
         <div className="dragghost" style={{ left: drag.x + 12, top: drag.y + 12 }}>
-          {drag.item.name}
+          {drag.payload.name}
         </div>
       )}
     </div>

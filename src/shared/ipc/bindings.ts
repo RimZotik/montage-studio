@@ -87,8 +87,8 @@ export const commands = {
 	rulesRead: () => typedError<RuleFile[], AppError>(__TAURI_INVOKE("rules_read")),
 	rulesWrite: (name: string, text: string) => typedError<null, AppError>(__TAURI_INVOKE("rules_write", { name, text })),
 	speechModel: () => typedError<SpeechModel, AppError>(__TAURI_INVOKE("speech_model")),
-	libraryView: () => typedError<LibraryView, AppError>(__TAURI_INVOKE("library_view")),
-	librarySave: (item: Item, pack: string | null) => typedError<Item, AppError>(__TAURI_INVOKE("library_save", { item, pack })),
+	libraryView: () => typedError<LibraryView_Serialize, AppError>(__TAURI_INVOKE("library_view")),
+	librarySave: (item: Item_Deserialize, pack: string | null) => typedError<Item_Serialize, AppError>(__TAURI_INVOKE("library_save", { item, pack })),
 	libraryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("library_delete", { id })),
 	packNew: (name: string) => typedError<Pack, AppError>(__TAURI_INVOKE("pack_new", { name })),
 	packSetName: (id: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("pack_set_name", { id, name })),
@@ -99,11 +99,21 @@ export const commands = {
 	toolRun: (id: string, params: Json, clips: string[]) => typedError<ToolOutcome, AppError>(__TAURI_INVOKE("tool_run", { id, params, clips })),
 	effectApply: (id: string, params: Json, clips: string[]) => typedError<string[], AppError>(__TAURI_INVOKE("effect_apply", { id, params, clips })),
 	styleApply: (id: string, lang: string) => typedError<string, AppError>(__TAURI_INVOKE("style_apply", { id, lang })),
-	soundPlace: (id: string, frame: number) => typedError<string, AppError>(__TAURI_INVOKE("sound_place", { id, frame })),
+	soundPlace: (id: string, frame: number, track: string | null) => typedError<string, AppError>(__TAURI_INVOKE("sound_place", { id, frame, track })),
+	/**  Файл звука библиотеки для прослушивания: в кэше программы, проект и медиа не меняются. */
+	soundPreview: (id: string) => typedError<string, AppError>(__TAURI_INVOKE("sound_preview", { id })),
+	captionsSave: () => typedError<string[], AppError>(__TAURI_INVOKE("captions_save")),
+	captionsImport: (path: string) => typedError<number, AppError>(__TAURI_INVOKE("captions_import", { path })),
+	librarySetPreview: (id: string, preview: Json) => typedError<null, AppError>(__TAURI_INVOKE("library_set_preview", { id, preview })),
+	packReorder: (pack: string, ids: string[]) => typedError<null, AppError>(__TAURI_INVOKE("pack_reorder", { pack, ids })),
 	exportStatus: () => typedError<ExportStatus, AppError>(__TAURI_INVOKE("export_status")),
 	exportEngineInstall: () => typedError<null, AppError>(__TAURI_INVOKE("export_engine_install")),
 	exportStart: (settings: ExportSettings) => typedError<string, AppError>(__TAURI_INVOKE("export_start", { settings })),
 	exportCancel: () => __TAURI_INVOKE<void>("export_cancel"),
+	/**  Выбрать папку готовых роликов (`None` — `output/` проекта). */
+	exportSetDir: (dir: string | null) => typedError<null, AppError>(__TAURI_INVOKE("export_set_dir", { dir })),
+	/**  Удалить готовый ролик и его файлы субтитров. Только то, что есть в списке этого проекта. */
+	exportDelete: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("export_delete", { path })),
 };
 
 /** Events */
@@ -141,6 +151,13 @@ export type AppliedEffect = {
 	controls?: any,
 	spec?: any,
 };
+
+/**  Чем становится дорожка субтитров в готовом ролике. */
+export type CaptionMode = 
+/**  Свои субтитры: текст поверх кадра, часть картинки. */
+"burned" | 
+/**  Субтитры видео: в кадр не вшиваются, рядом с роликом кладутся файлы для загрузки на площадку. */
+"file";
 
 export type ChatEvent = 
 /**  Модель ответила впервые в процессе. */
@@ -302,6 +319,8 @@ export type ErrorEntry = {
 };
 
 export type ExportFile = {
+	/**  Файлы субтитров рядом с роликом: расширения. */
+	captions: string[],
 	name: string,
 	path: string,
 	/**  Размер, МБ. */
@@ -336,6 +355,8 @@ export type ExportSettings = {
 };
 
 export type ExportStatus = {
+	/**  Куда лягут новые ролики. */
+	dir: string | null,
 	engineReady: boolean,
 	nodeFound: boolean,
 	running: boolean,
@@ -360,7 +381,10 @@ export type ImportResult = {
 };
 
 /**  Эффект или инструмент — содержимое `effect.json` / `tool.json`. */
-export type Item = {
+export type Item = Item_Serialize | Item_Deserialize;
+
+/**  Эффект или инструмент — содержимое `effect.json` / `tool.json`. */
+export type Item_Deserialize = {
 	version?: number,
 	id: string,
 	/**  `effect`, `tool`, `style` (правила оформления ролика) или `sound` (звук, синтезируется). */
@@ -391,10 +415,52 @@ export type Item = {
 	/**  Звук: длительность и где слышен удар, секунд. */
 	seconds?: number | null,
 	hitAt?: number | null,
+	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
+	preview?: any,
 	/**  `studio`, `user`, `claude`. */
 	author?: string,
 	/**  Номер правки элемента. */
 	revision?: number,
+};
+
+/**  Эффект или инструмент — содержимое `effect.json` / `tool.json`. */
+export type Item_Serialize = {
+	version: number,
+	id: string,
+	/**  `effect`, `tool`, `style` (правила оформления ролика) или `sound` (звук, синтезируется). */
+	kind: string,
+	/**  Строка или `{ru, en}`. */
+	name: any,
+	description: any,
+	/**  Назначение: `video`, `audio`, `text`, `sequence`, `transition`. */
+	targets: string[],
+	tags: string[],
+	/**  Панель управления: элементы по порядку (`docs/extensions.md`). */
+	controls: any,
+	/**  Эффект: что и как анимируется. */
+	spec: any,
+	/**  Инструмент: `builtin` или `ops`. */
+	engine: string | null,
+	builtin: string | null,
+	/**  Инструмент `ops`: шаблон операций таймлайна. */
+	steps: any,
+	/**  Инструмент `ops`: `selection` — шаблон на каждый выбранный клип, иначе один раз. */
+	each: string | null,
+	/**  Инструмент `audioProcess`: цепочка обработки звука; значения панели — `$id`. */
+	filter: string | null,
+	/**  Стиль: текст правил (markdown), строка или `{ru, en}`. */
+	rules: any,
+	/**  Звук: как его синтезировать. */
+	synth: string | null,
+	/**  Звук: длительность и где слышен удар, секунд. */
+	seconds: number | null,
+	hitAt: number | null,
+	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
+	preview?: any,
+	/**  `studio`, `user`, `claude`. */
+	author: string,
+	/**  Номер правки элемента. */
+	revision: number,
 };
 
 /**  Свободный JSON от интерфейса (значения панели). */
@@ -404,17 +470,36 @@ export type Json = any;
 export type LibraryChanged = null;
 
 /**  Библиотека для интерфейса. */
-export type LibraryRow = {
-	item: Item,
+export type LibraryRow = LibraryRow_Serialize | LibraryRow_Deserialize;
+
+/**  Библиотека для интерфейса. */
+export type LibraryRow_Deserialize = {
+	item: Item_Deserialize,
 	pack: string,
 	uses: number,
 	lastUsed: number | null,
 };
 
-export type LibraryView = {
+/**  Библиотека для интерфейса. */
+export type LibraryRow_Serialize = {
+	item: Item_Serialize,
+	pack: string,
+	uses: number,
+	lastUsed: number | null,
+};
+
+export type LibraryView = LibraryView_Serialize | LibraryView_Deserialize;
+
+export type LibraryView_Deserialize = {
 	root: string,
 	packs: Pack[],
-	items: LibraryRow[],
+	items: LibraryRow_Deserialize[],
+};
+
+export type LibraryView_Serialize = {
+	root: string,
+	packs: Pack[],
+	items: LibraryRow_Serialize[],
 };
 
 export type LimitWindow = {
@@ -476,7 +561,20 @@ export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | n
 /**  Удалить клипы; `ripple` — сдвинуть следующие клипы тех же дорожек влево на освободившееся. */
 { op: "deleteClips"; ids: string[]; ripple: boolean } | 
 /**  Изменить свойства: незаданные остаются как были. */
-{ op: "setProps"; id: string; props: ClipPropsPatch } | { op: "setText"; id: string; text: string } | { op: "setTrack"; id: string; muted?: boolean | null; locked?: boolean | null; volume?: number | null } | 
+{ op: "setProps"; id: string; props: ClipPropsPatch } | { op: "setText"; id: string; text: string } | { op: "setTrack"; id: string; muted?: boolean | null; locked?: boolean | null; volume?: number | null; captionMode?: CaptionMode | null } | 
+/**  Новая дорожка: видео — наверх стопки, звук — вниз. Дорожка субтитров одна. */
+{ op: "addTrack"; kind: TrackKind } | 
+/**  Убрать пустую дорожку (последнюю дорожку вида и субтитры нельзя). */
+{ op: "removeTrack"; id: string } | 
+/**
+ *  Копии клипов (связанные — вместе); `at` — куда встанет самый ранний, иначе сразу за концом
+ *  копируемых.
+ */
+{ op: "duplicateClips"; ids: string[]; at?: number | null } | 
+/**  Клипы наверх или вниз своих дорожек: верхний перекрывает нижний при наложении. */
+{ op: "arrangeClips"; ids: string[]; top: boolean } | 
+/**  Связать клипы (двигаются вместе) или развязать. */
+{ op: "setLink"; ids: string[]; linked: boolean } | 
 /**  Наложить эффект на клип. */
 { op: "addEffect"; clip: string; effect: AppliedEffect } | 
 /**  Изменить эффект на клипе: значения (добавляются к прежним), вкл/выкл, панель, анимацию. */
@@ -494,6 +592,8 @@ export type Pack = {
 	refs?: string[],
 	/**  Версия содержимого базового пака. */
 	packVersion?: number,
+	/**  Порядок элементов, заданный пользователем; не упомянутые идут после, добавленные — в конец. */
+	order?: string[],
 };
 
 export type Phase = "download" | "verify" | "extract" | "done" | "error" | "cancelled";
@@ -662,6 +762,8 @@ export type Track = {
 	locked?: boolean,
 	/**  Громкость всей дорожки 0–2. */
 	volume?: number | null,
+	/**  Только у субтитров. */
+	captionMode?: CaptionMode,
 };
 
 export type TrackKind = "video" | "audio" | "captions";

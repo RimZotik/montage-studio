@@ -38,6 +38,38 @@ pub struct ExportSettings {
     pub scale: f64,
 }
 
+/// `.studio/exports.json`: куда складывать ролики проекта и что уже готово (файлы могут лежать
+/// где угодно, поэтому список не выводится из папки).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct Journal {
+    version: u32,
+    dir: Option<String>,
+    files: Vec<String>,
+}
+
+fn journal_path(dir: &Path) -> PathBuf {
+    dir.join(".studio").join("exports.json")
+}
+
+fn journal(dir: &Path) -> Journal {
+    std::fs::read(journal_path(dir)).ok().and_then(|raw| serde_json::from_slice(&raw).ok()).unwrap_or_default()
+}
+
+fn journal_write(dir: &Path, j: &Journal) -> AppResult<()> {
+    if let Some(p) = journal_path(dir).parent() {
+        std::fs::create_dir_all(p)?;
+    }
+    let body = serde_json::to_string_pretty(&Journal { version: 1, ..j.clone() }).unwrap_or_default();
+    std::fs::write(journal_path(dir), body)?;
+    Ok(())
+}
+
+/// Папка готовых роликов: выбранная пользователем или `output/` проекта.
+pub fn out_dir(dir: &Path) -> PathBuf {
+    journal(dir).dir.map_or_else(|| dir.join("output"), PathBuf::from)
+}
+
 impl Default for ExportSettings {
     fn default() -> Self {
         Self { name: String::new(), codec: "h264".into(), quality: "high".into(), scale: 1.0 }
@@ -84,6 +116,8 @@ fn emit(app: &AppHandle, phase: &str, progress: f64, message: Option<String>, ou
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportFile {
+    /// Файлы субтитров рядом с роликом: расширения.
+    pub captions: Vec<String>,
     pub name: String,
     pub path: String,
     /// Размер, МБ.
@@ -98,6 +132,8 @@ pub struct ExportFile {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportStatus {
+    /// Куда лягут новые ролики.
+    pub dir: Option<String>,
     pub engine_ready: bool,
     pub node_found: bool,
     pub running: bool,
@@ -256,7 +292,7 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
             return Err(AppError::new("emptyTimeline", "nothing to export"));
         }
         let name = if settings.name.trim().is_empty() { safe_name(&doc.project.name) } else { safe_name(&settings.name) };
-        let out_dir = dir.join("output");
+        let out_dir = out_dir(&dir);
         std::fs::create_dir_all(&out_dir)?;
         let output = free_output(&out_dir, &name);
         let e = encoding(settings);
@@ -283,6 +319,7 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
     *state.child.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(child);
     state.cancelled.store(false, std::sync::atomic::Ordering::SeqCst);
     let (app2, out2) = (app.clone(), output.clone());
+    let project_dir = app.state::<ProjectState>().context().map(|c| c.0);
     let (child_slot, busy, cancelled) = (Arc::clone(&state.child), Arc::clone(&state.busy), Arc::clone(&state.cancelled));
     std::thread::spawn(move || {
         log::info!("export started: {}", out2.display());
@@ -310,6 +347,19 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
         } else if success && error.is_none() && out2.is_file() {
             emit(&app2, "finish", 1.0, None, None);
             fast_start(&app2, &out2);
+            if let Some(d) = &project_dir {
+                let mut j = journal(d);
+                j.files.retain(|f| Path::new(f) != out2);
+                j.files.push(out2.display().to_string());
+                let _ = journal_write(d, &j);
+            }
+            if let Some(doc) = app2.state::<ProjectState>().context().map(|c| c.1) {
+                if crate::captions::soft_track(&doc).is_some() {
+                    if let Err(e) = crate::captions::write_beside(&doc, &out2) {
+                        log::warn!("caption files: {}", e.message);
+                    }
+                }
+            }
             log::info!("export done: {}", out2.display());
             emit(&app2, "done", 1.0, None, Some(out2.display().to_string()));
         } else {
@@ -343,33 +393,69 @@ pub fn still(app: &AppHandle, frame: u32, scale: f64) -> AppResult<PathBuf> {
 
 fn files(app: &AppHandle, dir: &Path) -> Vec<ExportFile> {
     let ffprobe = find(app, ToolId::Ffprobe);
-    let mut list: Vec<(std::time::SystemTime, ExportFile)> = std::fs::read_dir(dir.join("output"))
+    // Из журнала и из папки: файл, сделанный раньше, тоже виден.
+    let mut paths: Vec<PathBuf> = journal(dir).files.iter().map(PathBuf::from).collect();
+    for folder in [dir.join("output"), out_dir(dir)] {
+        for e in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            if e.path().extension().is_some_and(|x| x == "mp4") && !paths.contains(&e.path()) {
+                paths.push(e.path());
+            }
+        }
+    }
+    let mut list: Vec<(std::time::SystemTime, ExportFile)> = paths
         .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.path().extension().is_some_and(|x| x == "mp4"))
-        .filter_map(|e| {
-            let meta = e.metadata().ok()?;
-            let probe = ffprobe.as_ref().and_then(|p| crate::media::probe(p, &e.path()));
+        .filter(|p| p.is_file())
+        .filter_map(|path| {
+            let meta = std::fs::metadata(&path).ok()?;
+            let _ = app.asset_protocol_scope().allow_file(&path);
+            let probe = ffprobe.as_ref().and_then(|p| crate::media::probe(p, &path));
             let duration_s = probe.as_ref().and_then(|p| p.duration_s);
             let size = meta.len() as f64;
-            Some((meta.modified().ok()?, ExportFile { name: e.file_name().to_string_lossy().into_owned(), path: e.path().display().to_string(), size_mb: size / 1_048_576.0, duration_s, width: probe.as_ref().and_then(|p| p.width), height: probe.as_ref().and_then(|p| p.height), mbps: duration_s.filter(|d| *d > 0.0).map(|d| size * 8.0 / d / 1_000_000.0) }))
+            Some((meta.modified().ok()?, ExportFile { captions: crate::captions::EXTENSIONS.iter().filter(|x| path.with_extension(x).is_file()).map(|x| (*x).to_owned()).collect(), name: path.file_name()?.to_string_lossy().into_owned(), path: path.display().to_string(), size_mb: size / 1_048_576.0, duration_s, width: probe.as_ref().and_then(|p| p.width), height: probe.as_ref().and_then(|p| p.height), mbps: duration_s.filter(|d| *d > 0.0).map(|d| size * 8.0 / d / 1_000_000.0) }))
         })
         .collect();
     list.sort_by_key(|x| std::cmp::Reverse(x.0));
-    list.into_iter().map(|x| x.1).take(20).collect()
+    list.into_iter().map(|x| x.1).take(50).collect()
 }
 
 /// Состояние движка и готовые файлы проекта.
 pub fn status(app: &AppHandle) -> AppResult<ExportStatus> {
     let dir = app.state::<ProjectState>().context().map(|c| c.0);
-    Ok(ExportStatus { engine_ready: engine_ready(&engine_dir(app)?), node_found: find(app, ToolId::Node).is_some(), running: app.state::<ExportState>().busy.load(std::sync::atomic::Ordering::SeqCst), files: dir.map_or_else(Vec::new, |d| files(app, &d)) })
+    Ok(ExportStatus { engine_ready: engine_ready(&engine_dir(app)?), node_found: find(app, ToolId::Node).is_some(), running: app.state::<ExportState>().busy.load(std::sync::atomic::Ordering::SeqCst), dir: dir.as_ref().map(|d| out_dir(d).display().to_string()), files: dir.map_or_else(Vec::new, |d| files(app, &d)) })
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn export_status(app: AppHandle) -> AppResult<ExportStatus> {
     tauri::async_runtime::spawn_blocking(move || status(&app)).await.map_err(|e| AppError::new("internal", e.to_string()))?
+}
+
+/// Выбрать папку готовых роликов (`None` — `output/` проекта).
+#[tauri::command]
+#[specta::specta]
+pub fn export_set_dir(project: State<'_, ProjectState>, dir: Option<String>) -> AppResult<()> {
+    let (root, _) = project.context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let mut j = journal(&root);
+    j.dir = dir;
+    journal_write(&root, &j)
+}
+
+/// Удалить готовый ролик и его файлы субтитров. Только то, что есть в списке этого проекта.
+#[tauri::command]
+#[specta::specta]
+pub fn export_delete(app: AppHandle, path: String) -> AppResult<()> {
+    let (root, _) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let file = PathBuf::from(&path);
+    if !files(&app, &root).iter().any(|f| f.path == path) {
+        return Err(AppError::new("notExport", path));
+    }
+    std::fs::remove_file(&file)?;
+    for x in crate::captions::EXTENSIONS {
+        let _ = std::fs::remove_file(file.with_extension(x));
+    }
+    let mut j = journal(&root);
+    j.files.retain(|f| f != &path);
+    journal_write(&root, &j)
 }
 
 #[tauri::command]

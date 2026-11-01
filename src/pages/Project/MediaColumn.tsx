@@ -5,7 +5,7 @@ import { AudioLines, Clapperboard, Image, Mic, Music, Upload } from "lucide-reac
 import { type CSSProperties, type ReactNode, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type MediaItem, commands as ipc, events } from "@/shared/ipc/bindings";
-import { startMediaDrag } from "@/pages/Edit/dragMedia";
+import { mediaPayload, startDrag } from "@/pages/Edit/dragMedia";
 
 const CATS: { id: string; icon: ReactNode }[] = [
   { id: "footage", icon: <Clapperboard size={14} strokeWidth={1.75} /> },
@@ -103,14 +103,15 @@ function MediaColumnView({ projectPath, reloadKey, selected, onSelect, onError, 
             className={`mc ${selected === m.path ? "sel" : ""}`}
             title={m.path}
             onClick={() => onSelect(m)}
-            onPointerDown={(e) => compact && e.button === 0 && startMediaDrag(m, e)}
+            onPointerDown={(e) => compact && e.button === 0 && startDrag(mediaPayload(m), e)}
+            onDragStart={(e) => e.preventDefault()}
             onDoubleClick={() => void revealItemInDir(`${projectPath}\\${m.path.replaceAll("/", "\\")}`)}
             onContextMenu={(e) => {
               e.preventDefault();
               setMenu({ item: m, x: e.clientX, y: e.clientY });
             }}
           >
-            <div className={`mt ${m.category}`}>{m.thumb ? <img src={convertFileSrc(m.thumb)} alt="" /> : CATS.find((c) => c.id === m.category)?.icon}</div>
+            <div className={`mt ${m.category}`}>{m.thumb ? <img src={convertFileSrc(m.thumb)} alt="" draggable={false} /> : CATS.find((c) => c.id === m.category)?.icon}</div>
             <div className="mn">
               <span>{m.name}</span>
               <span className="mono">{duration(m.probe?.durationS)}</span>

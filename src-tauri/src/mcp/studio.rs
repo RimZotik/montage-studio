@@ -1,6 +1,7 @@
 //! Инструменты MCP для библиотеки, речи и анализа звука. Долгие вызовы ждут ограниченное время:
 //! клиент MCP не должен висеть — незаконченное отвечает «еще идет», вызов повторяется позже.
 
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -20,6 +21,8 @@ pub fn list() -> Value {
     json!([
         { "name": "library_list", "description": "Effects and tools in the library. Optional kind (effect|tool), query (text), pack. One line each: id, targets, controls, uses.", "inputSchema": { "type": "object", "properties": { "kind": { "type": "string" }, "query": { "type": "string" }, "pack": { "type": "string" } } } },
         { "name": "library_get", "description": "Full JSON of a library item (before changing it).", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
+        { "name": "library_preview", "description": "Attach a card preview to your library item. type wave|blocks: before, after = arrays of numbers (loudness bars or clip lengths, up to 512). type image: beforeFile, afterFile = paths from render_frame (shrunk and embedded). Effects already preview live: only for tools, sounds or a real example.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "type": { "type": "string" }, "before": { "type": "array", "items": { "type": "number" } }, "after": { "type": "array", "items": { "type": "number" } }, "beforeFile": { "type": "string" }, "afterFile": { "type": "string" } }, "required": ["id", "type"] } },
+        { "name": "captions_file", "description": "Real video captions as files. action export: write .srt, .vtt, .ass next to the videos from the captions track. action import: read a .srt/.vtt/.ass file (path) onto the captions track, replacing what is there, with its look.", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "path": { "type": "string" } }, "required": ["action"] } },
         { "name": "library_save", "description": "Create or update an effect or tool, including its control panel. New items go to `pack` (default main). The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
         { "name": "pack_edit", "description": "Packs. action: list | create (name) | add (pack,item) | remove (pack,item) | delete (pack; its items move to main).", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "pack": { "type": "string" }, "item": { "type": "string" }, "name": { "type": "string" } }, "required": ["action"] } },
         { "name": "effect_apply", "description": "Put a library effect on clips (default: selection). params override its defaults. One undo step. Returns effect ids on the clips.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "params": { "type": "object" } }, "required": ["id"] } },
@@ -89,8 +92,31 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
             "library_get" => {
                 let id = args["id"].as_str().ok_or("id required")?;
                 let (item, pack) = library::find(&root, id).ok_or_else(|| format!("{id} not found"))?;
-                Ok(format!("pack={pack}\n{}", serde_json::to_string(&item).map_err(|e| e.to_string())?))
+                // Картинки предпросмотра Claude не нужны: только расход токенов.
+                let mut value = serde_json::to_value(&item).map_err(|e| e.to_string())?;
+                if value["preview"]["type"] == "image" {
+                    value["preview"] = json!({ "type": "image" });
+                }
+                Ok(format!("pack={pack}\n{value}"))
             }
+            "library_preview" => {
+                let id = args["id"].as_str().ok_or("id required")?;
+                let kind = args["type"].as_str().ok_or("type required")?;
+                let preview = if kind == "image" {
+                    let side = |key: &str| args[key].as_str().map(|p| crate::captions::thumbnail_data(app, Path::new(p))).transpose();
+                    json!({ "type": "image", "before": side("beforeFile").map_err(|e| e.message)?, "after": side("afterFile").map_err(|e| e.message)? })
+                } else {
+                    json!({ "type": kind, "before": args["before"], "after": args["after"] })
+                };
+                library::set_preview(&root, id, preview).map_err(|e| format!("refused ({}): {}", e.code, e.message))?;
+                library::changed(app);
+                Ok(format!("preview attached to {id}"))
+            }
+            "captions_file" => match args["action"].as_str().unwrap_or("") {
+                "export" => crate::captions::save_all(app).map(|p| p.join(", ")).map_err(|e| e.message),
+                "import" => crate::captions::import_file(app, args["path"].as_str().ok_or("path required")?).map(|n| format!("{n} captions imported")).map_err(|e| e.message),
+                other => Err(format!("unknown action {other}")),
+            },
             "library_save" => {
                 let mut raw = args["item"].clone();
                 if raw.get("author").is_none() {

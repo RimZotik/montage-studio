@@ -5,6 +5,7 @@ mod audio;
 mod chat;
 mod checks;
 mod claude_limits;
+mod captions;
 mod components;
 mod db;
 mod error;

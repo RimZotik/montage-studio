@@ -104,6 +104,10 @@ pub struct Item {
     pub seconds: Option<f64>,
     #[serde(default)]
     pub hit_at: Option<f64>,
+    /// Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[specta(type = specta_typescript::Any)]
+    pub preview: Value,
     /// `studio`, `user`, `claude`.
     #[serde(default = "user")]
     pub author: String,
@@ -134,6 +138,9 @@ pub struct Pack {
     /// Версия содержимого базового пака.
     #[serde(default)]
     pub pack_version: u32,
+    /// Порядок элементов, заданный пользователем; не упомянутые идут после, добавленные — в конец.
+    #[serde(default)]
+    pub order: Vec<String>,
 }
 
 fn bad(msg: impl Into<String>) -> AppError {
@@ -223,6 +230,48 @@ pub fn validate_spec(spec: &Value, controls: &Value) -> AppResult<()> {
     Ok(())
 }
 
+/// Предпросмотр: только данные. Картинка — небольшая встроенная, адреса и файлы не принимаются.
+pub fn validate_preview(p: &Value) -> AppResult<()> {
+    if p.is_null() {
+        return Ok(());
+    }
+    let side = |v: &Value, numbers: bool| -> bool {
+        if numbers {
+            v.as_array().is_some_and(|a| a.len() <= 512 && a.iter().all(|n| n.as_f64().is_some_and(|x| (0.0..=1000.0).contains(&x))))
+        } else {
+            v.as_str().is_some_and(|s| s.len() <= 300_000 && ["data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,"].iter().any(|h| s.starts_with(h)))
+        }
+    };
+    let ok = match p["type"].as_str() {
+        Some("wave" | "blocks") => side(&p["after"], true) && (p["before"].is_null() || side(&p["before"], true)),
+        Some("image") => side(&p["after"], false) && (p["before"].is_null() || side(&p["before"], false)),
+        _ => false,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(bad("preview: {type:wave|blocks, before?:[numbers], after:[numbers]} or {type:image, before?, after} with small data:image"))
+    }
+}
+
+/// Прикрепить предпросмотр к элементу (база — только чтение: сначала копия).
+pub fn set_preview(root: &Path, id: &str, preview: Value) -> AppResult<Item> {
+    let (mut item, pack) = find(root, id).ok_or_else(|| bad(format!("{id} not found")))?;
+    if pack == "base" {
+        return Err(bad("the base pack is read-only: save a copy under a new id first"));
+    }
+    item.preview = preview;
+    save(root, item, Some(&pack))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn library_set_preview(app: tauri::AppHandle, id: String, preview: crate::presets::Json) -> AppResult<()> {
+    set_preview(&root_of(&app)?, &id, preview.0)?;
+    changed(&app);
+    Ok(())
+}
+
 pub fn validate_item(item: &Item) -> AppResult<()> {
     if !id_ok(&item.id) {
         return Err(bad(format!("id {:?}: lowercase latin, digits, dashes", item.id)));
@@ -231,6 +280,7 @@ pub fn validate_item(item: &Item) -> AppResult<()> {
         return Err(bad("name required"));
     }
     validate_controls(&item.controls)?;
+    validate_preview(&item.preview)?;
     match item.kind.as_str() {
         "effect" => {
             validate_spec(&item.spec, &item.controls)?;
@@ -349,7 +399,7 @@ fn write_pack(root: &Path, pack: &Pack) -> AppResult<()> {
 /// Создать главный пак и поставить базовый (при новой версии программы — обновить).
 pub fn init(root: &Path) -> AppResult<()> {
     if read_pack(root, MAIN).is_none() {
-        write_pack(root, &Pack { version: 1, id: MAIN.into(), name: json!({ "ru": "Главный", "en": "Main" }), description: json!({ "ru": "Все, что не входит в другие паки", "en": "Everything outside other packs" }), author: "user".into(), readonly: false, refs: vec![], pack_version: 0 })?;
+        write_pack(root, &Pack { version: 1, id: MAIN.into(), name: json!({ "ru": "Главный", "en": "Main" }), description: json!({ "ru": "Все, что не входит в другие паки", "en": "Everything outside other packs" }), author: "user".into(), readonly: false, refs: vec![], pack_version: 0, order: vec![] })?;
     }
     let bundled: Value = serde_json::from_str(BASE_PACK).map_err(|e| AppError::new("internal", e.to_string()))?;
     let pack: Pack = serde_json::from_value(bundled["pack"].clone()).map_err(|e| AppError::new("internal", e.to_string()))?;
@@ -470,7 +520,7 @@ pub fn pack_create(root: &Path, name: &str, description: &str) -> AppResult<Pack
     if name.trim().is_empty() {
         return Err(bad("pack name required"));
     }
-    let pack = Pack { version: 1, id: pack_id_from(root, name), name: json!(name.trim()), description: json!(description), author: "user".into(), readonly: false, refs: vec![], pack_version: 0 };
+    let pack = Pack { version: 1, id: pack_id_from(root, name), name: json!(name.trim()), description: json!(description), author: "user".into(), readonly: false, refs: vec![], pack_version: 0, order: vec![] };
     write_pack(root, &pack)?;
     Ok(pack)
 }
@@ -520,6 +570,16 @@ pub fn pack_link(root: &Path, pack: &str, item: &str, add: bool) -> AppResult<()
         }
         p.refs.retain(|r| r != item);
     }
+    write_pack(root, &p)
+}
+
+/// Задать порядок элементов пака.
+pub fn pack_order(root: &Path, pack: &str, ids: Vec<String>) -> AppResult<()> {
+    let mut p = read_pack(root, pack).ok_or_else(|| bad(format!("pack {pack} not found")))?;
+    if p.readonly {
+        return Err(AppError::new("packReadonly", pack.to_owned()));
+    }
+    p.order = ids;
     write_pack(root, &p)
 }
 
@@ -763,6 +823,14 @@ pub fn pack_item(app: AppHandle, pack: String, item: String, add: bool) -> AppRe
 
 #[tauri::command]
 #[specta::specta]
+pub fn pack_reorder(app: AppHandle, pack: String, ids: Vec<String>) -> AppResult<()> {
+    pack_order(&ready(&app)?, &pack, ids)?;
+    changed(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn pack_export(app: AppHandle, id: String, path: String) -> AppResult<u32> {
     Ok(u32::try_from(export(&ready(&app)?, &id, Path::new(&path))?).unwrap_or(0))
 }
@@ -797,8 +865,11 @@ mod tests {
         assert_eq!((p[0].id.as_str(), p[1].id.as_str()), (MAIN, BASE), "главный первым, базовый вторым");
         let all = items(&root);
         assert!(all.iter().all(|(_, owner)| owner == BASE));
-        for needed in ["beat-cut", "remove-silence", "captions-from-speech", "normalize-loudness", "duck-music", "fade-in", "zoom-slow", "voice-clean", "whoosh-low", "style-short-retention", "loop-end"] {
+        for needed in ["remove-silence", "captions-from-speech", "normalize-loudness", "duck-music", "fade-in", "zoom-slow", "voice-clean", "audio-compressor", "blur"] {
             assert!(all.iter().any(|(i, _)| i.id == needed), "{needed}");
+        }
+        for personal in ["beat-cut", "whoosh-low", "style-short-retention", "loop-end"] {
+            assert!(!all.iter().any(|(i, _)| i.id == personal), "личное не идет с программой: {personal}");
         }
         let bundled: Value = serde_json::from_str(BASE_PACK).unwrap();
         assert_eq!(all.len(), bundled["items"].as_array().unwrap().len(), "ни один элемент не отброшен проверкой");
@@ -919,7 +990,7 @@ mod tests {
         let used = HashMap::from([("zoom-slow".to_owned(), (9, 0))]);
         let line = compact_index(&root, &used, 100);
         assert!(line.contains("effects: zoom-slow("), "частое — первым: {line}");
-        assert!(line.contains("beat-cut("));
+        assert!(line.contains("remove-silence("));
         assert!(line.len() < 2400, "короткая строка: {} знаков", line.len());
     }
 }

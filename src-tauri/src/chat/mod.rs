@@ -46,6 +46,7 @@ struct Session {
     stdin: ChildStdin,
     /// Хэш постоянного контекста, с которым запущен процесс (сменился — перезапуск).
     prompt_hash: u64,
+    model: String,
 }
 
 #[derive(Default)]
@@ -95,7 +96,26 @@ fn kill(session: &mut Session) {
     let _ = session.child.wait();
 }
 
-fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc<std::sync::atomic::AtomicBool>) -> AppResult<Session> {
+/// Модель хода. «Авто»: обычные правки — Sonnet; замысел ролика, план и новый проект — Opus, это
+/// решает весь ролик. Смена модели сбрасывает кэш подсказки, поэтому без частых переключений:
+/// начатый на сильной модели разговор на ней и остается, пока идет работа над замыслом.
+pub fn pick_model(setting: &str, text: &str, clips: usize, current: Option<&str>) -> String {
+    if ["sonnet", "opus", "haiku"].contains(&setting) {
+        return setting.to_owned();
+    }
+    let low = text.to_lowercase();
+    let plans = ["план", "придум", "сценари", "идея", "идею", "замысел", "концепц", "стиль", "plan", "idea", "script", "concept", "style"].iter().any(|w| low.contains(w));
+    if plans || clips == 0 || text.chars().count() > 600 {
+        return "opus".into();
+    }
+    // Короткая просьба сразу после плана не повод сбрасывать кэш: переход вниз — когда монтаж идет.
+    if current == Some("opus") && clips < 3 {
+        return "opus".into();
+    }
+    "sonnet".into()
+}
+
+fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, model: &str, busy: Arc<std::sync::atomic::AtomicBool>) -> AppResult<Session> {
     let claude = find(app, ToolId::Claude).ok_or_else(|| AppError::new("claudeMissing", "claude not found"))?;
     let cdir = claude_dir(dir);
     let mcp = cdir.join("mcp.json");
@@ -106,9 +126,8 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc
     );
     std::fs::write(&mcp, serde_json::json!({ "mcpServers": servers }).to_string())?;
     let mut command = build_command(&claude, dir, system, &mcp, saved_session(dir));
-    let model = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).filter(|m| ["sonnet", "opus", "haiku"].contains(&m.as_str())).unwrap_or_else(|| "sonnet".into());
     command
-        .args(["--model", &model])
+        .args(["--model", model])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -126,7 +145,7 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc
         });
     }
     log::info!("claude chat started in {}", dir.display());
-    Ok(Session { dir: dir.to_path_buf(), child, stdin, prompt_hash })
+    Ok(Session { dir: dir.to_path_buf(), child, stdin, prompt_hash, model: model.to_owned() })
 }
 
 /// Команда запуска `claude` для чата проекта.
@@ -232,7 +251,9 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
     std::fs::create_dir_all(&cdir)?;
     let (system, hash) = prompt::system_prompt(&dir, &doc, env!("CARGO_PKG_VERSION"));
     // Сменилась модель в настройках — тоже перезапуск (с той же сессией).
-    let model = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).unwrap_or_default();
+    let setting = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).unwrap_or_default();
+    let current = chat.session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().map(|s| s.model.clone());
+    let model = pick_model(&setting, text, doc.timeline.clips.len(), current.as_deref());
     let hash = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -248,7 +269,7 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
         if let Some(mut old) = guard.take() {
             kill(&mut old);
         }
-        *guard = Some(spawn(app, &dir, &system_path, hash, Arc::clone(&chat.busy))?);
+        *guard = Some(spawn(app, &dir, &system_path, hash, &model, Arc::clone(&chat.busy))?);
         chat.library_seen.store(0, std::sync::atomic::Ordering::SeqCst);
     }
     let session = guard.as_mut().ok_or_else(|| AppError::new("internal", "no session"))?;

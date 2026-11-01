@@ -52,29 +52,66 @@ pub struct Phrase {
     pub text: String,
 }
 
+/// Короткие слова, которые по смыслу держатся за следующее: «у нас», «в доме», "to go".
+const GLUE: &[&str] = &["а", "в", "во", "и", "к", "ко", "о", "об", "обо", "от", "у", "с", "со", "до", "за", "из", "на", "над", "не", "ни", "но", "по", "под", "при", "про", "что", "как", "для", "без", "да", "a", "an", "the", "to", "of", "in", "on", "at", "by", "for", "and", "or", "but", "not", "is", "i"];
+
+fn glue(word: &str) -> bool {
+    GLUE.contains(&word.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()))
+}
+
+fn ends_sentence(word: &str) -> bool {
+    word.ends_with(['.', '!', '?', '…'])
+}
+
 /// Собрать слова во фразы: новая — после конца предложения, паузы длиннее `gap_ms`, при `max_words`
-/// словах или `max_chars` знаках.
+/// словах или `max_chars` знаках. Предлог или союз не остается один и не закрывает фразу: уходит к
+/// следующему слову («у нас» — вместе даже при одном слове на экране).
 pub fn phrases(words: &[Word], max_words: usize, max_chars: usize, gap_ms: u32) -> Vec<Phrase> {
-    let mut out: Vec<Phrase> = Vec::new();
-    let mut count = 0;
-    let mut closed = true;
+    let length = |g: &[&Word]| g.iter().map(|w| w.text.chars().count() + 1).sum::<usize>();
+    let mut groups: Vec<Vec<&Word>> = Vec::new();
     for w in words {
-        let fits = out.last().is_some_and(|p| !closed && count < max_words.max(1) && p.text.chars().count() + 1 + w.text.chars().count() <= max_chars.max(1) && w.start.saturating_sub(p.end) <= gap_ms);
-        match out.last_mut() {
-            Some(p) if fits => {
-                p.text.push(' ');
-                p.text.push_str(&w.text);
-                p.end = w.end;
-                count += 1;
-            }
-            _ => {
-                out.push(Phrase { start: w.start, end: w.end, text: w.text.clone() });
-                count = 1;
+        let (mut joins, mut moved) = (false, None);
+        if let Some(g) = groups.last_mut() {
+            if let Some(&prev) = g.last() {
+                let near = !ends_sentence(&prev.text) && w.start.saturating_sub(prev.end) <= gap_ms;
+                joins = near && length(g) + w.text.chars().count() <= max_chars.max(1) && (g.len() < max_words.max(1) || glue(&prev.text));
+                if !joins && near && g.len() > 1 && glue(&prev.text) {
+                    moved = g.pop();
+                }
             }
         }
-        closed = w.text.ends_with(['.', '!', '?', '…']);
+        match groups.last_mut() {
+            Some(g) if joins => g.push(w),
+            _ => groups.push(moved.into_iter().chain(std::iter::once(w)).collect()),
+        }
+    }
+    groups
+        .into_iter()
+        .filter_map(|g| Some(Phrase { start: g.first()?.start, end: g.last()?.end, text: g.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ") }))
+        .collect()
+}
+
+/// Быстрая речь: фраза, которую не успеть прочитать за `min_ms`, объединяется со следующей, пока
+/// влезает в строку. Так субтитры поспевают за голосом, а не копят отставание.
+pub fn merge_fast(list: Vec<Phrase>, min_ms: u32, max_chars: usize, gap_ms: u32) -> Vec<Phrase> {
+    let mut out: Vec<Phrase> = Vec::new();
+    for p in list {
+        match out.last_mut() {
+            Some(l) if l.end.saturating_sub(l.start) < min_ms && !ends_sentence(&l.text) && p.start.saturating_sub(l.end) <= gap_ms && l.text.chars().count() + 1 + p.text.chars().count() <= max_chars.max(1) => {
+                l.text.push(' ');
+                l.text.push_str(&p.text);
+                l.end = p.end;
+            }
+            _ => out.push(p),
+        }
     }
     out
+}
+
+/// Сколько текста влезает в строку кадра: знаков по ширине и размеру шрифта, слов — по знакам.
+pub fn line_limits(width: u32, font_px: f64) -> (usize, usize) {
+    let chars = ((f64::from(width) * 0.84 / (font_px.max(8.0) * 0.55)) as usize).clamp(8, 90);
+    (chars, (chars / 6).clamp(3, 10))
 }
 
 /// Время файла (мс) → кадр таймлайна у этого клипа; `None` — обрезано и не звучит.
@@ -102,7 +139,8 @@ pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, track: &str, rules: &C
     let hold = fps * 3 / 10;
     // Частицы и предлоги можно не показывать: время речи остается у соседних слов.
     let kept: Vec<Word> = words.iter().filter(|w| !skip.iter().any(|s| s == &w.text.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_owned())).cloned().collect();
-    let timed: Vec<(u32, u32, String)> = phrases(&kept, max_words, max_chars, 700)
+    let min_ms = (min_hold_s.max(0.05) * 1000.0) as u32;
+    let timed: Vec<(u32, u32, String)> = merge_fast(phrases(&kept, max_words, max_chars, 700), min_ms, max_chars, 700)
         .into_iter()
         .filter_map(|p| {
             let a = frame_on_clip(clip, p.start, fps)?;
@@ -111,16 +149,14 @@ pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, track: &str, rules: &C
         })
         .collect();
     let mut ops = Vec::new();
-    // Слово не мелькает: если следующая реплика начинается раньше, чем прошла минимальная длина, она
-    // показывается с небольшой задержкой.
-    let mut free = 0;
-    for (i, (a, b, text)) in timed.iter().enumerate() {
-        let start = (*a).max(free);
+    // Реплика начинается ровно на своем слове: минимальная длина не сдвигает следующую, иначе
+    // отставание копится к концу ролика.
+    for (i, (start, b, text)) in timed.iter().enumerate() {
         let next = timed.get(i + 1).map_or(u32::MAX, |n| n.0);
         // Тянется до следующего, если между ними совсем мало.
-        let end = if next.saturating_sub(*b) <= hold { next } else { *b }.max(start + min).min(clip.end().max(start + 1));
-        free = end;
-        ops.push(Op::AddClip { track: track.to_owned(), kind: ClipKind::Caption, src: None, text: Some(text.clone()), start, duration: end - start, offset: None });
+        let held = if next.saturating_sub(*b) <= hold { next } else { (*b).max(start + min) };
+        let end = held.min(next).min(clip.end()).max(start + 1);
+        ops.push(Op::AddClip { track: track.to_owned(), kind: ClipKind::Caption, src: None, text: Some(text.clone()), start: *start, duration: end - start, offset: None });
     }
     ops
 }
@@ -328,6 +364,41 @@ mod tests {
         assert_eq!(by_rules, ["раз два три.", "еще", "после"]);
         assert_eq!(phrases(&words, 2, 80, 700)[0].text, "раз два");
         assert_eq!(phrases(&words, 10, 7, 700)[0].text, "раз два", "ограничение по знакам");
+    }
+
+    #[test]
+    fn prepositions_stay_with_the_next_word() {
+        let words = [word(0, 100, "у"), word(100, 300, "нас"), word(300, 500, "большой"), word(500, 700, "дом"), word(700, 800, "в"), word(800, 1000, "лесу")];
+        let one: Vec<String> = phrases(&words, 1, 80, 700).into_iter().map(|p| p.text).collect();
+        assert_eq!(one, ["у нас", "большой", "дом", "в лесу"], "даже по одному слову предлог не один");
+        let two: Vec<String> = phrases(&words, 3, 80, 700).into_iter().map(|p| p.text).collect();
+        assert_eq!(two, ["у нас большой", "дом в лесу"]);
+        let narrow: Vec<String> = phrases(&words, 9, 14, 700).into_iter().map(|p| p.text).collect();
+        assert_eq!(narrow, ["у нас большой", "дом в лесу"], "по ширине предлог уходит на следующую строку");
+    }
+
+    #[test]
+    fn fast_speech_does_not_lag_behind_the_voice() {
+        // 20 слов по 0,1 с: при минимуме 0,4 с прежняя схема отставала бы на секунды.
+        let words: Vec<Word> = (0..20).map(|i| word(i * 100, (i + 1) * 100, "слово")).collect();
+        let c = clip(0, 300, 0);
+        let ops = caption_ops(&c, &words, 30, "s1", &CaptionRules { max_words: 1, max_chars: 30, min_hold_s: 0.4, skip: vec![] });
+        let got: Vec<(u32, u32, String)> = ops.iter().map(|o| match o { Op::AddClip { start, duration, text, .. } => (*start, *duration, text.clone().unwrap()), _ => panic!() }).collect();
+        assert!(got.len() < 20, "быстрая речь объединяется: {got:?}");
+        assert!(got.iter().all(|x| x.2.split(' ').count() >= 2 || x == got.last().unwrap()));
+        let last = got.last().unwrap();
+        assert!(last.0 <= 60, "последняя реплика на своем слове, без отставания: {last:?}");
+        for w in got.windows(2) {
+            assert!(w[0].0 + w[0].1 <= w[1].0, "без наложений");
+        }
+    }
+
+    #[test]
+    fn wide_frame_fits_a_longer_line() {
+        let (vertical, _) = line_limits(1080, 64.0);
+        let (wide, words) = line_limits(1920, 64.0);
+        assert!((20..=30).contains(&vertical));
+        assert!(wide > vertical + 15 && words >= 6);
     }
 
     #[test]

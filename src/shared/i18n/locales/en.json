@@ -281,7 +281,8 @@
     "models": {
       "sonnet": "Sonnet",
       "opus": "Opus",
-      "haiku": "Haiku"
+      "haiku": "Haiku",
+      "auto": "Auto"
     },
     "actions": "Actions: {{count}}"
   },
@@ -372,7 +373,41 @@
       "effects": "Effects"
     },
     "trackVolume": "Track {{name}}",
-    "speed": "Speed"
+    "speed": "Speed",
+    "tools": {
+      "select": "Select",
+      "razor": "Blade: a click cuts the clip",
+      "split": "Split at playhead",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "ripple": "Ripple delete",
+      "addText": "Add text",
+      "marker": "Marker",
+      "snap": "Snapping",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fit": "Fit the video",
+      "front": "Bring to front",
+      "back": "Send to back",
+      "link": "Link",
+      "unlink": "Unlink",
+      "effects": "Effects",
+      "selectAll": "Select all",
+      "track": "Track",
+      "addVideoTrack": "Add video track",
+      "addAudioTrack": "Add audio track",
+      "removeTrack": "Remove track"
+    },
+    "captionMode": {
+      "burned": "Own captions: text in the picture",
+      "file": "Video captions: a file for the platform",
+      "burnedShort": "own",
+      "fileShort": "file",
+      "import": "Load a captions file…",
+      "save": "Save captions files",
+      "imported": "Lines loaded: {{count}}",
+      "saved": "Captions files saved next to the videos"
+    }
   },
   "crash": {
     "title": "The page did not open",
@@ -438,7 +473,25 @@
     },
     "soundAdded": "Sound placed at the playhead",
     "styleApplied": "Style added to the project rules: Claude follows it from the next message",
-    "deleteSure": "Delete with its history?"
+    "deleteSure": "Delete with its history?",
+    "catalog": "Catalog",
+    "close": "Close",
+    "back": "Back to the list",
+    "before": "Before",
+    "after": "After",
+    "applyToSelected": "Apply to selection",
+    "applyStyle": "Apply style",
+    "listen": "Listen",
+    "save": "Save",
+    "saved": "Saved",
+    "removeFromPack": "Remove from pack",
+    "addedTo": "Added to “{{pack}}”",
+    "use": {
+      "effect": "Apply to selection",
+      "sound": "Place at playhead",
+      "style": "Apply style",
+      "tool": "Open panel"
+    }
   },
   "export": {
     "title": "Export the video",
@@ -482,6 +535,16 @@
       "render": "Rendering frames",
       "encode": "Encoding",
       "finish": "Finishing"
-    }
+    },
+    "folder": "Folder",
+    "folderChoose": "Choose a folder",
+    "folderReset": "Project folder",
+    "softCaptions": "Captions go next to the video as .srt, .vtt, .ass; not in the picture",
+    "captionFiles": "Captions files next to it: {{list}}",
+    "delete": "Delete the file",
+    "deleteSure": "Click again to delete",
+    "noFrames": "The timeline is empty",
+    "previewCap": "This is how the video will look",
+    "backToProject": "Back to the project"
   }
 }

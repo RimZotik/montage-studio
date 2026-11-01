@@ -432,15 +432,21 @@ fn captions(c: &Ctx<'_>, wait: Duration) -> AppResult<ToolOutcome> {
     }
     let language = c.text("language").unwrap_or("auto");
     let track = c.text("track").map_or_else(|| c.doc.timeline.tracks.iter().find(|t| t.kind == TrackKind::Captions).map(|t| t.id.clone()), |t| Some(t.to_owned())).ok_or_else(|| bad("no captions track"))?;
-    let (words, chars) = (num(c.p, "maxWords", 4.0) as usize, num(c.p, "maxChars", 28.0) as usize);
+    let style = c.text("styleEffect").filter(|s| *s != "none").and_then(|s| effect_copy(c.app, s));
+    // 0 — по кадру и шрифту: в широком ролике строка длиннее, в вертикальном короче.
+    let font = style.as_ref().and_then(|s| s.spec["text"]["size"].as_f64()).unwrap_or(64.0);
+    let (auto_chars, auto_words) = speech::line_limits(c.doc.project.sequence.width, font);
+    let pick = |key: &str, auto: usize| match num(c.p, key, 0.0) as usize {
+        0 => auto,
+        n => n,
+    };
     let rules = speech::CaptionRules {
-        max_words: words,
-        max_chars: chars,
+        max_words: pick("maxWords", auto_words),
+        max_chars: pick("maxChars", auto_chars),
         min_hold_s: num(c.p, "minHold", 0.3),
         skip: c.text("skipWords").unwrap_or("").split(',').map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).collect(),
     };
     let anim = c.text("animation").unwrap_or("none").to_owned();
-    let style = c.text("styleEffect").filter(|s| *s != "none").and_then(|s| effect_copy(c.app, s));
     let looks: Vec<AppliedEffect> = if anim == "mix" { ["text-pop", "text-fly", "text-rise", "text-hit"].iter().filter_map(|n| effect_copy(c.app, n)).collect() } else { effect_copy(c.app, &anim).into_iter().collect() };
     let mut adds = Vec::new();
     let mut seen = Vec::new();
@@ -606,23 +612,31 @@ fn audio_process(c: &Ctx<'_>, item: &Item) -> AppResult<ToolOutcome> {
     Ok(done(count, format!("{count} clips use processed sound")))
 }
 
+/// Синтезировать звук в файл.
+fn synth_to(app: &AppHandle, item: &Item, seconds: f64, out: &Path) -> AppResult<()> {
+    let ffmpeg = find(app, ToolId::Ffmpeg).ok_or_else(|| AppError::new("ffmpegMissing", "ffmpeg not found"))?;
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = out.with_extension("tmp.wav");
+    let mut cmd = std::process::Command::new(ffmpeg);
+    cmd.args(["-v", "error", "-y", "-f", "lavfi", "-i", item.synth.as_deref().unwrap_or("")]).args(["-t", &seconds.to_string(), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le"]).arg(&tmp);
+    let r = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()))?;
+    if !r.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(bad(String::from_utf8_lossy(&r.stderr).lines().last().unwrap_or("synth failed").to_owned()));
+    }
+    std::fs::rename(&tmp, out)?;
+    Ok(())
+}
+
 /// Файл звука из библиотеки: синтезируется один раз в `media/sfx/`. Итог — путь и длина, секунд.
 pub fn sound_file(app: &AppHandle, dir: &Path, item: &Item) -> AppResult<(String, f64)> {
     let seconds = item.seconds.ok_or_else(|| bad("sound without length"))?;
     let rel = format!("media/sfx/{}.wav", item.id);
     let out = dir.join(&rel);
     if !out.is_file() {
-        let ffmpeg = find(app, ToolId::Ffmpeg).ok_or_else(|| AppError::new("ffmpegMissing", "ffmpeg not found"))?;
-        std::fs::create_dir_all(out.parent().unwrap_or(dir))?;
-        let tmp = out.with_extension("tmp.wav");
-        let mut cmd = std::process::Command::new(ffmpeg);
-        cmd.args(["-v", "error", "-y", "-f", "lavfi", "-i", item.synth.as_deref().unwrap_or("")]).args(["-t", &seconds.to_string(), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le"]).arg(&tmp);
-        let r = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()))?;
-        if !r.status.success() {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(bad(String::from_utf8_lossy(&r.stderr).lines().last().unwrap_or("synth failed").to_owned()));
-        }
-        std::fs::rename(&tmp, &out)?;
+        synth_to(app, item, seconds, &out)?;
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri_specta::Event::emit(&crate::media::MediaChanged, app)));
     }
     Ok((rel, seconds))
@@ -943,8 +957,28 @@ pub fn style_apply(app: AppHandle, id: String, lang: String) -> AppResult<String
 
 #[tauri::command]
 #[specta::specta]
-pub async fn sound_place(app: AppHandle, id: String, frame: u32) -> AppResult<String> {
-    tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, &[frame], None, None, "sound").map(|v| v.join(","))).await.map_err(|e| AppError::new("internal", e.to_string()))?
+pub async fn sound_place(app: AppHandle, id: String, frame: u32, track: Option<String>) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, &[frame], track.as_deref(), None, "sound").map(|v| v.join(","))).await.map_err(|e| AppError::new("internal", e.to_string()))?
+}
+
+/// Файл звука библиотеки для прослушивания: в кэше программы, проект и медиа не меняются.
+#[tauri::command]
+#[specta::specta]
+pub async fn sound_preview(app: AppHandle, id: String) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = library::root_of(&app)?;
+        let (item, _) = library::find(&root, &id).filter(|(i, _)| i.kind == "sound").ok_or_else(|| bad(format!("sound {id} not found")))?;
+        let seconds = item.seconds.ok_or_else(|| bad("sound without length"))?;
+        let dir = app.path().app_cache_dir().map_err(|e| AppError::new("internal", e.to_string()))?.join("sounds");
+        let out = dir.join(format!("{}-{}.wav", item.id, item.revision));
+        if !out.is_file() {
+            synth_to(&app, &item, seconds, &out)?;
+        }
+        app.asset_protocol_scope().allow_file(&out).map_err(|e| AppError::new("internal", e.to_string()))?;
+        Ok(out.display().to_string())
+    })
+    .await
+    .map_err(|e| AppError::new("internal", e.to_string()))?
 }
 
 #[tauri::command]

@@ -15,6 +15,17 @@ pub enum TrackKind {
     Captions,
 }
 
+/// Чем становится дорожка субтитров в готовом ролике.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CaptionMode {
+    /// Свои субтитры: текст поверх кадра, часть картинки.
+    #[default]
+    Burned,
+    /// Субтитры видео: в кадр не вшиваются, рядом с роликом кладутся файлы для загрузки на площадку.
+    File,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Track {
@@ -28,6 +39,9 @@ pub struct Track {
     /// Громкость всей дорожки 0–2.
     #[serde(default = "one")]
     pub volume: f64,
+    /// Только у субтитров.
+    #[serde(default)]
+    pub caption_mode: CaptionMode,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -220,7 +234,24 @@ pub enum Op {
         locked: Option<bool>,
         #[serde(default)]
         volume: Option<f64>,
+        #[serde(default)]
+        caption_mode: Option<CaptionMode>,
     },
+    /// Новая дорожка: видео — наверх стопки, звук — вниз. Дорожка субтитров одна.
+    AddTrack { kind: TrackKind },
+    /// Убрать пустую дорожку (последнюю дорожку вида и субтитры нельзя).
+    RemoveTrack { id: String },
+    /// Копии клипов (связанные — вместе); `at` — куда встанет самый ранний, иначе сразу за концом
+    /// копируемых.
+    DuplicateClips {
+        ids: Vec<String>,
+        #[serde(default)]
+        at: Option<u32>,
+    },
+    /// Клипы наверх или вниз своих дорожек: верхний перекрывает нижний при наложении.
+    ArrangeClips { ids: Vec<String>, top: bool },
+    /// Связать клипы (двигаются вместе) или развязать.
+    SetLink { ids: Vec<String>, linked: bool },
     /// Наложить эффект на клип.
     AddEffect { clip: String, effect: AppliedEffect },
     /// Изменить эффект на клипе: значения (добавляются к прежним), вкл/выкл, панель, анимацию.
@@ -246,7 +277,7 @@ pub enum Op {
 
 /// Стандартные дорожки нового проекта: две видео, субтитры, голос, музыка, звуки.
 pub fn default_tracks() -> Vec<Track> {
-    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false, volume: 1.0 };
+    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default() };
     vec![t("v2", TrackKind::Video, "V2"), t("v1", TrackKind::Video, "V1"), t("s1", TrackKind::Captions, "S1"), t("a1", TrackKind::Audio, "A1"), t("a2", TrackKind::Audio, "A2"), t("a3", TrackKind::Audio, "A3")]
 }
 
@@ -442,7 +473,78 @@ impl Edit<'_> {
                 self.clip_mut(id)?.text = Some(text.clone());
                 Ok(vec![])
             }
-            Op::SetTrack { id, muted, locked, volume } => {
+            Op::AddTrack { kind } => {
+                let (letter, at) = match kind {
+                    TrackKind::Video => ('v', 0),
+                    TrackKind::Audio => ('a', self.tracks.len()),
+                    TrackKind::Captions => return Err(bad("there is one captions track")),
+                };
+                let n = (1..).find(|n| !self.tracks.iter().any(|t| t.id == format!("{letter}{n}"))).unwrap_or(1);
+                let id = format!("{letter}{n}");
+                self.tracks.insert(at, Track { id: id.clone(), kind: *kind, name: id.to_uppercase(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default() });
+                Ok(vec![id])
+            }
+            Op::RemoveTrack { id } => {
+                let kind = self.track(id)?.kind;
+                if kind == TrackKind::Captions || self.tracks.iter().filter(|t| t.kind == kind).count() < 2 {
+                    return Err(bad(format!("track {id} cannot be removed")));
+                }
+                if self.clips.iter().any(|c| &c.track == id) {
+                    return Err(bad(format!("track {id} is not empty")));
+                }
+                self.tracks.retain(|t| &t.id != id);
+                Ok(vec![])
+            }
+            Op::DuplicateClips { ids, at } => {
+                let mut all: Vec<String> = Vec::new();
+                for id in ids {
+                    for g in self.group(id)? {
+                        if !all.contains(&g) {
+                            all.push(g);
+                        }
+                    }
+                }
+                let sources: Vec<Clip> = self.clips.iter().filter(|c| all.contains(&c.id)).cloned().collect();
+                let first = sources.iter().map(|c| c.start).min().unwrap_or(0);
+                let last = sources.iter().map(Clip::end).max().unwrap_or(0);
+                let target = at.unwrap_or(last);
+                let mut links: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+                let mut made = Vec::new();
+                for s in sources {
+                    self.unlocked(&s.track)?;
+                    let id = next_id(self.clips);
+                    let link = s.link.as_ref().map(|l| links.entry(l.clone()).or_insert_with(|| format!("l{}", id.trim_start_matches('c'))).clone());
+                    self.clips.push(Clip { id: id.clone(), start: s.start - first + target, link, ..s });
+                    made.push(id);
+                }
+                Ok(made)
+            }
+            Op::ArrangeClips { ids, top } => {
+                let mut all: Vec<String> = Vec::new();
+                for id in ids {
+                    all.extend(self.group(id)?);
+                }
+                if *top {
+                    self.raise(&all);
+                } else {
+                    let (bottom, rest): (Vec<Clip>, Vec<Clip>) = self.clips.drain(..).partition(|c| all.contains(&c.id));
+                    self.clips.extend(bottom);
+                    self.clips.extend(rest);
+                }
+                Ok(vec![])
+            }
+            Op::SetLink { ids, linked } => {
+                let mut all: Vec<String> = Vec::new();
+                for id in ids {
+                    all.extend(self.group(id)?);
+                }
+                let link = (*linked && all.len() > 1).then(|| format!("l{}", next_id(self.clips).trim_start_matches('c')));
+                for id in &all {
+                    self.clip_mut(id)?.link.clone_from(&link);
+                }
+                Ok(vec![])
+            }
+            Op::SetTrack { id, muted, locked, volume, caption_mode } => {
                 let t = self.tracks.iter_mut().find(|t| &t.id == id).ok_or_else(|| bad(format!("track {id} not found")))?;
                 if let Some(m) = muted {
                     t.muted = *m;
@@ -452,6 +554,9 @@ impl Edit<'_> {
                 }
                 if let Some(v) = volume {
                     t.volume = *v;
+                }
+                if let Some(m) = caption_mode {
+                    t.caption_mode = *m;
                 }
                 Ok(vec![])
             }
@@ -584,8 +689,38 @@ mod tests {
     }
 
     #[test]
+    fn tracks_are_added_in_their_place_and_removed_only_empty() {
+        let (tracks, _, r) = run(&[Op::AddTrack { kind: TrackKind::Video }, Op::AddTrack { kind: TrackKind::Audio }]);
+        r.unwrap();
+        assert_eq!(tracks.first().map(|t| t.id.as_str()), Some("v3"), "новое видео — наверху");
+        assert_eq!(tracks.last().map(|t| t.id.as_str()), Some("a4"), "новый звук — внизу");
+        assert!(run(&[Op::AddTrack { kind: TrackKind::Captions }]).2.is_err(), "дорожка субтитров одна");
+        assert!(run(&[Op::RemoveTrack { id: "s1".into() }]).2.is_err());
+        assert!(run(&[media("v2", 0, 10), Op::RemoveTrack { id: "v2".into() }]).2.is_err(), "с клипами — нельзя");
+        assert!(run(&[Op::RemoveTrack { id: "v2".into() }]).2.is_ok());
+        assert!(run(&[Op::RemoveTrack { id: "v2".into() }, Op::RemoveTrack { id: "v1".into() }]).2.is_err(), "последнюю видеодорожку — нельзя");
+    }
+
+    #[test]
+    fn duplicates_keep_links_and_order_moves_to_top() {
+        let add = Op::AddLinked { video_track: "v1".into(), audio_track: "a1".into(), src: "media/footage/a.mp4".into(), start: 10, duration: 20, offset: None };
+        let (_, clips, r) = run(&[add.clone(), Op::DuplicateClips { ids: vec!["c1".into()], at: None }]);
+        r.unwrap();
+        assert_eq!(clips.len(), 4);
+        assert!(clips[2..].iter().all(|c| c.start == 30), "копия — сразу за концом");
+        assert_eq!(clips[2].link, clips[3].link);
+        assert_ne!(clips[0].link, clips[2].link, "у копии своя связка");
+        let (_, clips, r) = run(&[media("v1", 0, 10), media("v1", 0, 10), Op::ArrangeClips { ids: vec!["c1".into()], top: true }]);
+        r.unwrap();
+        assert_eq!(clips.last().map(|c| c.id.as_str()), Some("c1"));
+        let (_, clips, r) = run(&[add, Op::SetLink { ids: vec!["c1".into()], linked: false }]);
+        r.unwrap();
+        assert!(clips.iter().all(|c| c.link.is_none()), "развязаны оба");
+    }
+
+    #[test]
     fn locked_track_and_bad_split() {
-        assert_eq!(run(&[Op::SetTrack { id: "v1".into(), muted: None, locked: Some(true), volume: None }, media("v1", 0, 10)]).2.unwrap_err().code, "trackLocked");
+        assert_eq!(run(&[Op::SetTrack { id: "v1".into(), muted: None, locked: Some(true), volume: None, caption_mode: None }, media("v1", 0, 10)]).2.unwrap_err().code, "trackLocked");
         assert_eq!(run(&[media("v1", 0, 10), Op::SplitClip { id: "c1".into(), at: 10 }]).2.unwrap_err().code, "invalidEdit");
     }
 

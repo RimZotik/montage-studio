@@ -266,7 +266,7 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
             void ipc.settingsGet().then((s) => ipc.settingsUpdate({ ...s, claudeModel }));
           }}
         >
-          {["sonnet", "opus", "haiku"].map((m) => (
+          {["auto", "sonnet", "opus", "haiku"].map((m) => (
             <option key={m} value={m}>
               {t(`chat.models.${m}`)}
             </option>

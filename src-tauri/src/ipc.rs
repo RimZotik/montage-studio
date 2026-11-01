@@ -2,7 +2,7 @@
 
 use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{chat, error, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
+use crate::{captions, chat, error, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -60,10 +60,17 @@ pub fn builder() -> Builder<tauri::Wry> {
         presets::effect_apply,
         presets::style_apply,
         presets::sound_place,
+        presets::sound_preview,
+        captions::captions_save,
+        captions::captions_import,
+        library::library_set_preview,
+        library::pack_reorder,
         export::export_status,
         export::export_engine_install,
         export::export_start,
         export::export_cancel,
+        export::export_set_dir,
+        export::export_delete,
     ])
     .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged, mcp::UiCommand, speech::SpeechProgress, library::LibraryChanged, export::ExportProgress])
 }

@@ -178,7 +178,7 @@ pub fn project_load(app: AppHandle, path: String) -> AppResult<ProjectView> {
 pub fn open(app: &AppHandle, path: &str) -> AppResult<ProjectView> {
     let state = app.state::<ProjectState>();
     let db = app.state::<Db>();
-    let path = path.to_owned();
+    let path = crate::projects::canonical(path);
     let dir = PathBuf::from(&path);
     let doc = load(&dir)?;
     if let Some(chat) = app.try_state::<crate::chat::ChatState>() {

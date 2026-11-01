@@ -21,7 +21,7 @@ pub fn list() -> Value {
         { "name": "dev_ui_errors", "description": "Recent UI and core errors (newest first).", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer" } } } },
         { "name": "dev_new_project", "description": "Create a project in a parent folder and open it. preset vertical; fps.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" }, "parent": { "type": "string" }, "fps": { "type": "integer" } }, "required": ["name", "parent"] } },
         { "name": "dev_import", "description": "Import files into the open project (as a drop into the window).", "inputSchema": { "type": "object", "properties": { "files": { "type": "array", "items": { "type": "string" } } }, "required": ["files"] } },
-        { "name": "dev_eval", "description": "Run JavaScript in the studio window (click a button to check a flow as the user would). No result is returned: look with dev_screenshot.", "inputSchema": { "type": "object", "properties": { "js": { "type": "string" } }, "required": ["js"] } },
+        { "name": "dev_eval", "description": "Run JavaScript in the studio window (click a button to check a flow as the user would). Returns the value of the expression as JSON (promises are not awaited).", "inputSchema": { "type": "object", "properties": { "js": { "type": "string" } }, "required": ["js"] } },
         { "name": "dev_tab", "description": "Switch the open tab: home|projects|library|prepare|edit|export.", "inputSchema": { "type": "object", "properties": { "tab": { "type": "string" } }, "required": ["tab"] } },
     ])
 }
@@ -94,8 +94,11 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Result<String, String>
         }
         "dev_eval" => {
             let js = args["js"].as_str().ok_or("js required")?;
-            app.get_webview_window("main").ok_or("no main window")?.eval(js).map_err(|e| e.to_string())?;
-            Ok("ok".into())
+            let (tx, rx) = std::sync::mpsc::channel();
+            app.get_webview_window("main").ok_or("no main window")?.eval_with_callback(js, move |value| {
+                let _ = tx.send(value);
+            }).map_err(|e| e.to_string())?;
+            rx.recv_timeout(std::time::Duration::from_secs(10)).map_err(|e| e.to_string())
         }
         "dev_tab" => {
             let tab = args["tab"].as_str().ok_or("tab required")?;

@@ -110,9 +110,55 @@ pub fn create_on_disk(input: &NewProject) -> AppResult<(PathBuf, (u32, u32))> {
     Ok((dir, (width, height)))
 }
 
+/// Единая запись пути: одна папка, открытая с разными разделителями или регистром диска, — один
+/// проект, а не два.
+pub fn canonical(path: &str) -> String {
+    if !cfg!(windows) {
+        return path.to_owned();
+    }
+    let mut p = path.replace('/', "\\");
+    while p.len() > 3 && p.ends_with('\\') {
+        p.pop();
+    }
+    if p.as_bytes().get(1) == Some(&b':') {
+        p.replace_range(..1, &p[..1].to_uppercase());
+    }
+    p
+}
+
+/// Убрать из недавних повторы одной папки: остается запись в единой форме с самой поздней датой.
+fn tidy(c: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let rows: Vec<(String, i64, i64)> = {
+        let mut stmt = c.prepare("select path, created_at, opened_at from projects order by opened_at desc")?;
+        let list = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
+        list
+    };
+    // Сначала повторы, затем имена: иначе новое имя может совпасть с еще не удаленной записью.
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for (path, created, _) in rows {
+        let norm = canonical(&path);
+        let key = if cfg!(windows) { norm.to_lowercase() } else { norm.clone() };
+        if let Some(kept) = seen.get(&key) {
+            c.execute("update projects set created_at = min(created_at, ?1) where path = ?2", rusqlite::params![created, kept])?;
+            c.execute("delete from projects where path = ?1", [&path])?;
+        } else {
+            seen.insert(key, path);
+        }
+    }
+    for path in seen.into_values() {
+        let norm = canonical(&path);
+        if norm != path {
+            c.execute("update projects set path = ?1 where path = ?2", [&norm, &path])?;
+        }
+    }
+    Ok(())
+}
+
 /// Запомнить проект в недавних (открыт сейчас).
 pub fn remember(db: &Db, path: &str, name: &str, (w, h, fps): (u32, u32, u32)) -> AppResult<ProjectSummary> {
     let t = now();
+    let path = canonical(path);
+    let path = path.as_str();
     db.with(|c| {
         c.execute(
             "insert into projects (path, name, width, height, fps, created_at, opened_at) values (?1, ?2, ?3, ?4, ?5, ?6, ?6)
@@ -126,6 +172,7 @@ pub fn remember(db: &Db, path: &str, name: &str, (w, h, fps): (u32, u32, u32)) -
 
 pub fn recent(db: &Db) -> AppResult<Vec<ProjectSummary>> {
     db.with(|c| {
+        tidy(c)?;
         let mut stmt = c.prepare("select path, name, width, height, fps, created_at, opened_at from projects order by opened_at desc limit 200")?;
         let rows = stmt.query_map([], |r| {
             let path: String = r.get(0)?;
@@ -175,6 +222,26 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert!(list[0].exists);
         assert_eq!(create_on_disk(&input).unwrap_err().code, "folderNotEmpty");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn one_folder_is_one_project() {
+        let db = Db::memory().unwrap();
+        db.with(|c| {
+            let add = "insert into projects (path, name, width, height, fps, created_at, opened_at) values (?1, 'A', 1080, 1920, 60, ?2, ?3)";
+            c.execute(add, rusqlite::params!["B:\\Montage\\Ролик", 5, 10])?;
+            c.execute(add, rusqlite::params!["b:/Montage/Ролик/", 7, 20])?;
+            c.execute(add, rusqlite::params!["B:\\Montage\\Другой", 1, 1])?;
+            Ok(())
+        })
+        .unwrap();
+        let list = recent(&db).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].path, "B:\\Montage\\Ролик");
+        assert_eq!((list[0].opened_at, list[0].created_at), (20, 5), "дата открытия — поздняя, создания — ранняя");
+        remember(&db, "B:/Montage/Ролик", "A", (1080, 1920, 60)).unwrap();
+        assert_eq!(recent(&db).unwrap().len(), 2);
     }
 
     #[test]

@@ -248,8 +248,8 @@ export function App() {
       { id: "newProject", label: "cmd.newProject", icon: Plus, keys: "Ctrl+N", run: () => setDialog("new") },
       { id: "openProject", label: "cmd.openProject", icon: FolderOpen, keys: "Ctrl+O", run: () => void openFolder() },
       { id: "closeProject", label: "cmd.closeProject", icon: FolderClosed, keys: "Ctrl+W", enabled: () => !!project, run: () => void closeProject() },
-      { id: "undo", label: "cmd.undo", icon: Undo2, keys: "Ctrl+Z", enabled: () => !!project?.canUndo, run: () => void ipc.projectUndo().then(edited) },
-      { id: "redo", label: "cmd.redo", icon: Redo2, keys: "Ctrl+Shift+Z", enabled: () => !!project?.canRedo, run: () => void ipc.projectRedo().then(edited) },
+      { id: "undo", label: "cmd.undo", icon: Undo2, keys: "Ctrl+Z", enabled: () => tab === "edit" && !!project?.canUndo, run: () => void ipc.projectUndo().then(edited) },
+      { id: "redo", label: "cmd.redo", icon: Redo2, keys: "Ctrl+Shift+Z", enabled: () => tab === "edit" && !!project?.canRedo, run: () => void ipc.projectRedo().then(edited) },
       { id: "chat", label: "cmd.chat", icon: MessageSquare, keys: "Ctrl+L", enabled: () => !!project, run: () => setChatOpen((o) => !o) },
       { id: "palette", label: "cmd.palette", icon: CommandIcon, keys: "Ctrl+Shift+P", run: () => setDialog("palette") },
       ...[0, 1, 2].map((i) => ({
@@ -267,7 +267,7 @@ export function App() {
       { id: "installUpdate", label: "cmd.installUpdate", icon: Download, enabled: () => update?.phase === "ready", run: () => void ipc.updateInstall().then((r) => r.status === "error" && fail(r.error)) },
       { id: "quit", label: "cmd.quit", icon: LogOut, keys: "Alt+F4", run: () => void getCurrentWindow().close() },
     ],
-    [check, closeProject, edited, fail, openFolder, project, refreshLimits, toggleLanguage, update?.phase],
+    [check, closeProject, edited, fail, openFolder, project, refreshLimits, tab, toggleLanguage, update?.phase],
   );
   const byId = useMemo(() => new Map(commandList.map((c) => [c.id, c])), [commandList]);
 
@@ -283,7 +283,10 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if (dialog) return;
       if (typingTarget(e.target) && !e.ctrlKey && !e.altKey) return;
-      const c = findByKeys(commandList, comboOf(e));
+      const combo = comboOf(e);
+      // Отмена таймлайна не трогает ввод текста и окна поверх страницы.
+      if ((combo === "Ctrl+Z" || combo === "Ctrl+Shift+Z") && (typingTarget(e.target) || document.querySelector(".overlay"))) return;
+      const c = findByKeys(commandList, combo);
       if (c) {
         e.preventDefault();
         c.run();
@@ -314,7 +317,7 @@ export function App() {
             </button>
           ))}
         </div>
-        {project && (
+        {project && tab === "edit" && (
           <div className="pb-tools">
             <button className="iconbtn" title={`${t("cmd.undo")} (Ctrl+Z)`} disabled={!project.canUndo} onClick={() => byId.get("undo")?.run()}>
               <Undo2 size={15} strokeWidth={1.75} />

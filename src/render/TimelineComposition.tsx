@@ -64,9 +64,25 @@ function partAt(run: Run, f: number): Clip {
   return run.parts.find((p) => abs >= p.start && abs < p.start + p.duration) ?? (run.parts[run.parts.length - 1] as Clip);
 }
 
-/** Закрыт ли кадр (абсолютный) куском выше на той же дорожке. */
-function covered(abs: number, run: Run, same: Run[]): boolean {
-  return same.some((h) => h.z > run.z && abs >= h.start && abs < h.start + h.duration);
+/** Что остается от кусков после наложений: верхний на дорожке заменяет нижний на время наложения
+ *  (и картинку, и звук), нижний продолжается после него с нужного места файла. Перекрытая часть не
+ *  проигрывается вообще, поэтому два звука одновременно не слышны. */
+export function visibleRuns(runs: Run[]): Run[] {
+  const out: Run[] = [];
+  for (const r of runs) {
+    let pieces: [number, number][] = [[r.start, r.start + r.duration]];
+    for (const h of runs) {
+      if (h === r || h.track !== r.track || h.z <= r.z) continue;
+      const [a, b] = [h.start, h.start + h.duration];
+      pieces = pieces.flatMap(([x, y]): [number, number][] => {
+        if (b <= x || a >= y) return [[x, y]];
+        return [...(a > x ? ([[x, a]] as [number, number][]) : []), ...(b < y ? ([[b, y]] as [number, number][]) : [])];
+      });
+    }
+    const speed = propsOf(r.parts[0] as Clip).speed;
+    for (const [a, b] of pieces) out.push({ ...r, id: `${r.id}@${a}`, start: a, duration: b - a, offset: r.offset + Math.round((a - r.start) * speed) });
+  }
+  return out;
 }
 
 function VisualRun({ run, srcOf, muted, trackVolume }: { run: Run; srcOf: (p: string) => string; muted: boolean; trackVolume: number }) {
@@ -109,15 +125,18 @@ function SolidClip({ clip }: { clip: Clip }) {
 }
 
 /** Субтитр: нижняя треть по умолчанию; `props.y` сдвигает (минус — вверх), `scale` — размер. */
-function CaptionClip({ clip }: { clip: Clip }) {
+function CaptionClip({ clip, above }: { clip: Clip; above: Clip[] }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const p = propsOf(clip);
+  // Субтитры не лепятся друг на друга: верхний заменяет нижний, пока идет наложение.
+  const abs = clip.start + frame;
+  if (above.some((h) => abs >= h.start && abs < h.start + h.duration)) return null;
   const fx = effectsAt(clip.effects, frame, clip.duration, fps);
   const plate = fx.background && !/^#[0-9a-f]{6}00$/i.test(fx.background) ? fx.background : undefined;
   return (
     <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }}>
-      <div style={{ fontFamily: fx.font ?? "Geist Sans, system-ui, sans-serif", fontWeight: fx.weight ?? 700, fontSize: fx.size ?? 64, color: fx.color ?? "#fff", textAlign: "center", textTransform: fx.uppercase ? "uppercase" : undefined, lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate || fx.stroke === 0 ? undefined : `${fx.stroke ?? 2}px #000` }}>
+      <div style={{ fontFamily: fx.font ?? "Geist Sans, system-ui, sans-serif", fontWeight: fx.weight ?? 700, fontSize: fx.size ?? 64, color: fx.color ?? "#fff", textAlign: "center", whiteSpace: "pre-line", textTransform: fx.uppercase ? "uppercase" : undefined, lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate || fx.stroke === 0 ? undefined : `${fx.stroke ?? 2}px #000` }}>
         {clip.text}
       </div>
     </AbsoluteFill>
@@ -126,7 +145,8 @@ function CaptionClip({ clip }: { clip: Clip }) {
 
 export function TimelineComposition({ sequence, tracks, clips, srcOf }: CompositionProps) {
   const { fps } = useVideoConfig();
-  const runs = runsOf(clips);
+  const { isRendering } = useRemotionEnvironment();
+  const runs = visibleRuns(runsOf(clips));
   const z = new Map(clips.map((c, i) => [c.id, i]));
   // Следующий кусок подгружается заранее, чтобы на стыке не было паузы.
   const premount = sequence.fps;
@@ -136,7 +156,8 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
   // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх; субтитры всегда поверх видео;
   // внутри дорожки — по z.
   const shown = [...tracks].reverse().filter((t) => !t.muted);
-  const visual = [...shown.filter((t) => t.kind === "video"), ...shown.filter((t) => t.kind === "captions")];
+  // Субтитры видео в ролик не вшиваются: они идут файлами, в мониторе видны для проверки.
+  const visual = [...shown.filter((t) => t.kind === "video"), ...shown.filter((t) => t.kind === "captions" && !(isRendering && t.captionMode === "file"))];
   return (
     <AbsoluteFill style={{ background: sequence.background ?? "#000000" }}>
       {visual.map((t) => {
@@ -157,7 +178,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
               z: z.get(c.id) ?? 0,
               el: (
                 <Sequence key={c.id} from={c.start} durationInFrames={c.duration}>
-                  {c.kind === "caption" ? <CaptionClip clip={c} /> : <SolidClip clip={c} />}
+                  {c.kind === "caption" ? <CaptionClip clip={c} above={clips.filter((h) => h.track === t.id && h.kind === "caption" && (z.get(h.id) ?? 0) > (z.get(c.id) ?? 0) && h.start < c.start + c.duration && h.start + h.duration > c.start)} /> : <SolidClip clip={c} />}
                 </Sequence>
               ),
             })),
@@ -174,11 +195,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
                 src={srcOf(r.src)}
                 trimBefore={r.offset}
                 playbackRate={propsOf(r.parts[0] as Clip).speed}
-                volume={(f: number) => {
-                  // Звук нижнего клипа под верхним на той же дорожке не слышен.
-                  if (covered(r.start + f, r, own)) return 0;
-                  return loudnessAt(partAt(r, f), r.start + f, fps, t.volume ?? 1);
-                }}
+                volume={(f: number) => loudnessAt(partAt(r, f), r.start + f, fps, t.volume ?? 1)}
               />
             </Sequence>
           ));

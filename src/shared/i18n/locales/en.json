@@ -135,7 +135,10 @@
     "invalidSequence": "These frame settings do not fit: size 16–8192 and even, frame rate 1–240.",
     "newerProject": "The project was saved by a newer app version — update the app.",
     "noProject": "No project is open.",
-    "updateInstall": "The update did not install — try again."
+    "updateInstall": "The update did not install — try again.",
+    "overlap": "Clips on one track cannot overlap.",
+    "invalidEdit": "This edit does not fit.",
+    "trackLocked": "The track is locked."
   },
   "install": {
     "install": "Install · {{mb}} MB",
@@ -260,5 +263,55 @@
     "loop": "Loop",
     "mute": "Sound",
     "noWave": "The waveform appears after processing"
+  },
+  "edit": {
+    "safe": "Safe zone",
+    "mute": "Mute",
+    "lock": "Lock",
+    "empty": "Drag files from media onto tracks",
+    "track": {
+      "video": "video",
+      "audio": "audio",
+      "captions": "captions"
+    },
+    "inspector": "Properties",
+    "noSelection": "Select a clip on the timeline.",
+    "addCaption": "Caption at playhead",
+    "captionText": "Text",
+    "caption": "Caption",
+    "volume": "Volume",
+    "opacity": "Opacity",
+    "scale": "Scale",
+    "fadeIn": "Fade in",
+    "fadeOut": "Fade out",
+    "fr": "fr",
+    "split": "Split",
+    "delete": "Delete",
+    "keys": {
+      "space": {
+        "k": "Space",
+        "v": "play / pause"
+      },
+      "split": {
+        "k": "S",
+        "v": "split at playhead"
+      },
+      "delete": {
+        "k": "Delete",
+        "v": "delete"
+      },
+      "ripple": {
+        "k": "Shift+Delete",
+        "v": "ripple delete"
+      },
+      "marker": {
+        "k": "M",
+        "v": "marker"
+      },
+      "zoom": {
+        "k": "Ctrl+wheel",
+        "v": "zoom"
+      }
+    }
   }
 }

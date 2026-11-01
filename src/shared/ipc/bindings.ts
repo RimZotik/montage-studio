@@ -36,8 +36,9 @@ export const commands = {
 	projectCurrent: () => __TAURI_INVOKE<{
 	path: string,
 	project: ProjectFile,
-	tracks: number,
-	clips: number,
+	tracks: Track[],
+	clips: Clip[],
+	markers: Marker[],
 	canUndo: boolean,
 	canRedo: boolean,
 	/**  Что отменит «Отменить» / вернет «Повторить». */
@@ -50,6 +51,11 @@ export const commands = {
 	projectRename: (name: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_rename", { name })),
 	projectUndo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo")),
 	projectRedo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_redo")),
+	/**
+	 *  Правка таймлайна пакетом операций (`timeline::Op`): проверяется и применяется целиком, один
+	 *  шаг истории с подписью `label`. Возвращает ID созданных клипов.
+	 */
+	timelineApply: (ops: Op[], label: string) => typedError<string[], AppError>(__TAURI_INVOKE("timeline_apply", { ops, label })),
 	/**
 	 *  Отправить сообщение. `kind` — `user` или `decision` (ответ на карточку: в чате показывается
 	 *  отметкой на карточке, а не сообщением).
@@ -109,6 +115,46 @@ export type ChatItem = {
 	at: number,
 };
 
+export type Clip = {
+	id: string,
+	track: string,
+	kind: ClipKind,
+	/**  Путь к файлу внутри проекта (`media/...`) — у `media`. */
+	src?: string | null,
+	/**  Текст — у `caption`; цвет `#RRGGBB` — у `solid`. */
+	text?: string | null,
+	/**  Начало на таймлайне, кадр. */
+	start: number,
+	/**  Длительность, кадров. */
+	duration: number,
+	/**  С какого кадра файла начинается клип (обрезка начала). */
+	offset?: number,
+	props?: ClipProps,
+};
+
+export type ClipKind = 
+/**  Файл медиа (видео, звук, картинка). */
+"media" | 
+/**  Текст субтитров. */
+"caption" | 
+/**  Заливка цветом. */
+"solid";
+
+export type ClipProps = {
+	/**  Громкость 0–2 (1 — как есть). */
+	volume?: number | null,
+	/**  Прозрачность 0–1. */
+	opacity?: number | null,
+	/**  Масштаб (1 — по кадру). */
+	scale?: number | null,
+	/**  Сдвиг от центра кадра, пикселей последовательности. */
+	x?: number | null,
+	y?: number | null,
+	/**  Плавное появление и исчезновение звука/картинки, кадров. */
+	fadeIn?: number,
+	fadeOut?: number,
+};
+
 export type ComponentId = "node" | "ffmpeg";
 
 export type ComponentProgress = {
@@ -155,6 +201,11 @@ export type Limits = {
 /**  Лимиты обновились (из чата или по кнопке). */
 export type LimitsChanged = Limits;
 
+export type Marker = {
+	frame: number,
+	label?: string,
+};
+
 /**  Медиа проекта изменились (готовы миниатюры, волны, данные файлов) — перечитать список. */
 export type MediaChanged = null;
 
@@ -176,6 +227,15 @@ export type NewProject = {
 	preset: Preset,
 	fps: number,
 };
+
+/**  Операции правки таймлайна (пакет — один шаг истории). */
+export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | null; text: string | null; start: number; duration: number; offset: number | null } | { op: "moveClip"; id: string; track: string | null; start: number } | 
+/**  Новые границы: `start`/`duration` на таймлайне и `offset` в файле (что не задано — как было). */
+{ op: "trimClip"; id: string; start: number | null; duration: number | null; offset: number | null } | 
+/**  Разрезать клип в кадре таймлайна. */
+{ op: "splitClip"; id: string; at: number } | 
+/**  Удалить клипы; `ripple` — сдвинуть следующие клипы тех же дорожек влево на освободившееся. */
+{ op: "deleteClips"; ids: string[]; ripple: boolean } | { op: "setProps"; id: string; props: ClipProps } | { op: "setText"; id: string; text: string } | { op: "setTrack"; id: string; muted: boolean | null; locked: boolean | null } | { op: "addMarker"; frame: number; label: string } | { op: "removeMarker"; frame: number };
 
 export type Phase = "download" | "verify" | "extract" | "done" | "error" | "cancelled";
 
@@ -217,8 +277,9 @@ export type ProjectSummary = {
 export type ProjectView = {
 	path: string,
 	project: ProjectFile,
-	tracks: number,
-	clips: number,
+	tracks: Track[],
+	clips: Clip[],
+	markers: Marker[],
 	canUndo: boolean,
 	canRedo: boolean,
 	/**  Что отменит «Отменить» / вернет «Повторить». */
@@ -283,6 +344,16 @@ export type ToolStatus = {
 	/**  Размер загрузки компонента, МБ. */
 	downloadMb: number | null,
 };
+
+export type Track = {
+	id: string,
+	kind: TrackKind,
+	name: string,
+	muted?: boolean,
+	locked?: boolean,
+};
+
+export type TrackKind = "video" | "audio" | "captions";
 
 export type UpdateChanged = UpdateStatus;
 

@@ -1,14 +1,16 @@
-//! Модель файлов проекта и их версии. Поля, которые сервис пока не знает (клипы, дорожки до
-//! 0.6), хранятся как есть (`serde_json::Value`) — ничего не теряется при записи.
+//! Модель файлов проекта и их версии. Незнакомые сервису поля таймлайна хранятся как есть
+//! (`extra`) — ничего не теряется при записи.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use specta::Type;
 
+use super::timeline::{self, Clip, Marker, Track};
 use crate::error::{AppError, AppResult};
 
 pub const PROJECT_VERSION: u32 = 1;
-pub const TIMELINE_VERSION: u32 = 1;
+/// 2 — типизированные дорожки и клипы, стандартные дорожки у пустого таймлайна.
+pub const TIMELINE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -44,11 +46,20 @@ pub struct ProjectFile {
 pub struct TimelineFile {
     pub version: u32,
     #[serde(default)]
-    pub tracks: Vec<Value>,
+    pub tracks: Vec<Track>,
     #[serde(default)]
-    pub clips: Vec<Value>,
+    pub clips: Vec<Clip>,
     #[serde(default)]
-    pub markers: Vec<Value>,
+    pub markers: Vec<Marker>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+impl TimelineFile {
+    /// Новый таймлайн со стандартными дорожками.
+    pub fn new() -> Self {
+        Self { version: TIMELINE_VERSION, tracks: timeline::default_tracks(), ..Self::default() }
+    }
 }
 
 /// Весь проект в памяти (для истории — снимок целиком: файлы небольшие).
@@ -84,6 +95,10 @@ pub fn migrate_timeline(raw: Value) -> AppResult<(TimelineFile, bool)> {
     }
     let mut file: TimelineFile = serde_json::from_value(raw).map_err(|e| AppError::new("badProject", e.to_string()))?;
     let migrated = file.version != TIMELINE_VERSION;
+    // 1 → 2: у пустого таймлайна появляются стандартные дорожки.
+    if version < 2 && file.tracks.is_empty() {
+        file.tracks = timeline::default_tracks();
+    }
     file.version = TIMELINE_VERSION;
     Ok((file, migrated))
 }
@@ -103,7 +118,7 @@ pub fn validate(s: &Snapshot) -> AppResult<()> {
     if !size_ok || !(1..=240).contains(&q.fps) || !color(&q.background) || q.duration_frames > 240 * 60 * 60 * 6 {
         return Err(AppError::new("invalidSequence", format!("{}x{} {} fps {}", q.width, q.height, q.fps, q.background)));
     }
-    Ok(())
+    timeline::validate(&s.timeline.tracks, &s.timeline.clips)
 }
 
 #[cfg(test)]
@@ -128,8 +143,10 @@ mod tests {
 
     #[test]
     fn unknown_timeline_items_survive() {
-        let (t, _) = migrate_timeline(json!({ "version": 1, "clips": [{ "id": "c1", "anything": [1, 2] }] })).unwrap();
-        assert_eq!(serde_json::to_value(&t).unwrap()["clips"][0]["anything"], json!([1, 2]));
+        let (t, migrated) = migrate_timeline(json!({ "version": 1, "clips": [], "future": { "a": [1, 2] } })).unwrap();
+        assert!(migrated);
+        assert_eq!(t.tracks.len(), 6, "стандартные дорожки");
+        assert_eq!(serde_json::to_value(&t).unwrap()["future"]["a"], json!([1, 2]));
     }
 
     #[test]

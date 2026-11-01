@@ -10,7 +10,7 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
-use crate::project::model::{PROJECT_VERSION, ProjectFile, Sequence, TIMELINE_VERSION, TimelineFile};
+use crate::project::model::{PROJECT_VERSION, ProjectFile, Sequence, TimelineFile};
 const MEDIA_DIRS: [&str; 5] = ["footage", "voice", "music", "sfx", "images"];
 const RULES: [&str; 4] = ["brief", "rules", "style", "script"];
 
@@ -103,7 +103,7 @@ pub fn create_on_disk(input: &NewProject) -> AppResult<(PathBuf, (u32, u32))> {
         sequence: Sequence { width, height, fps: input.fps, duration_frames: 0, background: "#000000".into() },
         library_rules: vec![],
     };
-    let timeline = TimelineFile { version: TIMELINE_VERSION, ..TimelineFile::default() };
+    let timeline = TimelineFile::new();
     write(&dir.join("project.json"), &serde_json::to_string_pretty(&project).unwrap_or_default())?;
     write(&dir.join("timeline.json"), &serde_json::to_string_pretty(&timeline).unwrap_or_default())?;
     write(&dir.join(".gitignore"), ".studio/cache/\n.studio/build/\noutput/\n")?;

@@ -86,7 +86,19 @@
 Незнакомые сервису поля таймлайна (до 0.6) хранятся как есть и не теряются.
 
 Команды: `project_load`, `project_close`, `project_current`, `project_set_sequence`,
-`project_rename`, `project_undo`, `project_redo`.
+`project_rename`, `project_undo`, `project_redo`, `timeline_apply`.
+
+### Таймлайн сейчас (0.6, `project/timeline.rs`, `timeline.json` версии 2)
+
+- Дорожки по умолчанию: V2, V1 (видео; выше — ближе к зрителю), S1 (субтитры), A1–A3 (звук).
+- Клип: `id`, `track`, `kind` (`media` | `caption` | `solid`), `src` (`media/...`), `text`,
+  `start`, `duration`, `offset` (обрезка начала файла) — в кадрах; `props`: `volume` 0–2,
+  `opacity` 0–1, `scale`, `x`, `y`, `fadeIn`, `fadeOut` (кадров).
+- Правка — пакет операций `timeline_apply(ops, label)`: `addClip`, `moveClip`, `trimClip`,
+  `splitClip`, `deleteClips` (с `ripple`), `setProps`, `setText`, `setTrack`, `addMarker`,
+  `removeMarker`. Пакет применяется целиком или не применяется (наложение клипов на дорожке,
+  закрепленная дорожка, неподходящий вид клипа — отказ), один шаг отмены. Этими же операциями
+  будет править Claude (MCP студии).
 
 ## Данные и хранение
 

@@ -29,6 +29,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         project::project_rename,
         project::project_undo,
         project::project_redo,
+        project::timeline_apply,
         chat::chat_send,
         chat::chat_stop,
         chat::chat_new_session,

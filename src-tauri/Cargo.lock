@@ -2321,7 +2321,7 @@ dependencies = [
 
 [[package]]
 name = "montage-studio"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "futures-util",
  "log",

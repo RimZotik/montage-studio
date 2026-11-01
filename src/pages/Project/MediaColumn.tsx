@@ -5,6 +5,7 @@ import { AudioLines, Clapperboard, Image, Mic, Music, Upload } from "lucide-reac
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type MediaItem, commands as ipc, events } from "@/shared/ipc/bindings";
+import { startMediaDrag } from "@/pages/Edit/dragMedia";
 
 const CATS: { id: string; icon: ReactNode }[] = [
   { id: "footage", icon: <Clapperboard size={14} strokeWidth={1.75} /> },
@@ -29,10 +30,12 @@ type Props = {
   onError: (e: AppError) => void;
   onImport: (files: string[]) => void;
   style?: CSSProperties;
+  /** «Монтаж»: без зоны импорта, файлы тянутся на таймлайн. */
+  compact?: boolean;
 };
 
 /** Медиа проекта: импорт, категории, миниатюры и волны (строятся фоном), выбор для предпросмотра. */
-export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onError, onImport, style }: Props) {
+export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onError, onImport, style, compact }: Props) {
   const { t } = useTranslation();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [cat, setCat] = useState("footage");
@@ -67,6 +70,7 @@ export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onErro
   return (
     <section className="col media" style={style}>
       <div className="colhead">{t("prepare.media")}</div>
+      {!compact && (
       <button
         className="dropzone"
         onClick={() =>
@@ -80,6 +84,7 @@ export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onErro
         <span>{t("prepare.drop")}</span>
         <small>{t("prepare.dropHint")}</small>
       </button>
+      )}
       <div className="cats">
         {CATS.map((c) => (
           <button key={c.id} className={`cat ${cat === c.id ? "on" : ""}`} onClick={() => setCat(c.id)}>
@@ -96,6 +101,7 @@ export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onErro
             className={`mc ${selected === m.path ? "sel" : ""}`}
             title={m.path}
             onClick={() => onSelect(m)}
+            onPointerDown={(e) => compact && e.button === 0 && startMediaDrag(m, e)}
             onDoubleClick={() => void revealItemInDir(`${projectPath}\\${m.path.replaceAll("/", "\\")}`)}
             onContextMenu={(e) => {
               e.preventDefault();

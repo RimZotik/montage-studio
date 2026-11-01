@@ -11,6 +11,7 @@ import { Home } from "@/pages/Home/Home";
 import { Prepare } from "@/pages/Project/Prepare";
 import { Projects } from "@/pages/Projects/Projects";
 import { ChatPanel } from "@/panels/Claude/ChatPanel";
+import { EditPage } from "@/pages/Edit/EditPage";
 import { pickLanguage } from "@/shared/i18n";
 import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type ProjectView, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
@@ -198,7 +199,6 @@ export function App() {
         else if (p.type === "leave") setDragOver(false);
         else if (p.type === "drop") {
           setDragOver(false);
-          setTab("prepare");
           void importFiles(p.paths);
         }
       })
@@ -340,6 +340,8 @@ export function App() {
               mediaKey={mediaKey}
               rulesKey={rulesKey}
             />
+          ) : tab === "edit" ? (
+            <EditPage view={project} onError={fail} onImport={(files) => void importFiles(files)} mediaKey={mediaKey} />
           ) : (
             <div className="soon">{t(`soon.${tab}`)}</div>
           )}

@@ -95,7 +95,25 @@ export function installBrowserMock() {
       // Проект: открытие, правки последовательности и имени с отменой — в памяти.
       if (cmd === "project_load") {
         const path = String(args?.path);
-        mockProject = { path, project: { version: 1, name: path.split("\\").pop() ?? "Проект", series: null, sequence: { width: 1080, height: 1920, fps: 60, durationFrames: 0, background: "#000000" }, libraryRules: [] }, tracks: 0, clips: 0, canUndo: false, canRedo: false, undoLabel: null, redoLabel: null };
+        const tr = (id: string, kind: string, name: string) => ({ id, kind, name, muted: false, locked: false });
+        const clip = (id: string, track: string, kind: string, src: string | null, text: string | null, start: number, duration: number) => ({ id, track, kind, src, text, start, duration, offset: 0, props: { volume: 1, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } });
+        mockProject = {
+          path,
+          project: { version: 1, name: path.split("\\").pop() ?? "Проект", series: null, sequence: { width: 1080, height: 1920, fps: 60, durationFrames: 0, background: "#000000" }, libraryRules: [] },
+          tracks: [tr("v2", "video", "V2"), tr("v1", "video", "V1"), tr("s1", "captions", "S1"), tr("a1", "audio", "A1"), tr("a2", "audio", "A2"), tr("a3", "audio", "A3")],
+          clips: [
+            clip("c1", "v1", "media", "media/footage/screen-01.mp4", null, 0, 540),
+            clip("c2", "v1", "media", "media/footage/screen-02.mp4", null, 540, 480),
+            clip("c3", "v2", "media", "media/images/cover.png", null, 120, 240),
+            clip("c4", "s1", "caption", null, "Смотри сюда", 60, 120),
+            clip("c5", "s1", "caption", null, "Новая функция", 200, 150),
+            clip("c6", "a1", "media", "media/voice/take-2.wav", null, 30, 1500),
+            clip("c7", "a2", "media", "media/music/bed.mp3", null, 0, 1800),
+            clip("c8", "a3", "media", "media/sfx/hit-low.wav", null, 540, 60),
+          ],
+          markers: [{ frame: 540, label: "удар" }],
+          canUndo: false, canRedo: false, undoLabel: null, redoLabel: null,
+        };
         return structuredClone(mockProject);
       }
       if (cmd === "project_set_sequence" && mockProject) {
@@ -127,6 +145,20 @@ export function installBrowserMock() {
         fakeReply();
         return null;
       }
+      if (cmd === "timeline_apply" && mockProject) {
+        // Упрощенно: перенос, обрезка, удаление, свойства — для просмотра интерфейса.
+        for (const o of (args?.ops ?? []) as any[]) {
+          const c = mockProject.clips.find((x: any) => x.id === o.id);
+          if (o.op === "moveClip" && c) Object.assign(c, { start: o.start, track: o.track ?? c.track });
+          if (o.op === "trimClip" && c) Object.assign(c, { start: o.start ?? c.start, duration: o.duration ?? c.duration });
+          if (o.op === "deleteClips") mockProject.clips = mockProject.clips.filter((x: any) => !o.ids.includes(x.id));
+          if (o.op === "setProps" && c) c.props = o.props;
+          if (o.op === "addClip") mockProject.clips.push({ ...o, id: `c${Date.now()}`, offset: 0, props: { volume: 1, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } });
+        }
+        mockProject = { ...mockProject, clips: [...mockProject.clips], canUndo: true };
+        emit("project-changed", mockProject);
+        return [];
+      }
       if (cmd === "project_close") {
         mockProject = null;
         return null;
@@ -134,6 +166,7 @@ export function installBrowserMock() {
       if (cmd === "settings_update") return args?.value;
       // `#install` в адресе — сразу показать ход установки ffmpeg (для снимков).
       if (cmd === "system_check" && location.hash === "#install") setTimeout(() => fakeInstall("ffmpeg"), 300);
+      if (cmd === "system_check" && location.hash === "#edit") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelectorAll(".tabs button")[1] as HTMLElement | undefined)?.click(), 400); setTimeout(() => (document.querySelector(".clip.video") as HTMLElement | null)?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })), 900); }, 300);
       if (cmd === "system_check" && location.hash === "#preview") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelector(".mc") as HTMLElement | null)?.click(), 400); }, 300);
       if (cmd === "system_check" && location.hash === "#project") setTimeout(() => (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(), 300);
       if (cmd === "claude_limits_refresh") return DATA.claude_limits_last;

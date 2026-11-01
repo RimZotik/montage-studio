@@ -5,6 +5,7 @@
 
 mod history;
 pub mod model;
+pub mod timeline;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -25,8 +26,9 @@ use model::{ProjectFile, Sequence, Snapshot};
 pub struct ProjectView {
     pub path: String,
     pub project: ProjectFile,
-    pub tracks: u32,
-    pub clips: u32,
+    pub tracks: Vec<timeline::Track>,
+    pub clips: Vec<timeline::Clip>,
+    pub markers: Vec<timeline::Marker>,
     pub can_undo: bool,
     pub can_redo: bool,
     /// Что отменит «Отменить» / вернет «Повторить».
@@ -48,8 +50,9 @@ impl Open {
         ProjectView {
             path: self.dir.display().to_string(),
             project: self.doc.project.clone(),
-            tracks: u32::try_from(self.doc.timeline.tracks.len()).unwrap_or(u32::MAX),
-            clips: u32::try_from(self.doc.timeline.clips.len()).unwrap_or(u32::MAX),
+            tracks: self.doc.timeline.tracks.clone(),
+            clips: self.doc.timeline.clips.clone(),
+            markers: self.doc.timeline.markers.clone(),
             can_undo: self.history.can_undo(),
             can_redo: self.history.can_redo(),
             undo_label: self.history.undo_label().map(str::to_owned),
@@ -213,6 +216,24 @@ pub fn project_rename(app: AppHandle, state: State<'_, ProjectState>, db: State<
     crate::projects::remember(&db, &view.path, &view.project.name, (seq.width, seq.height, seq.fps))?;
     emit(&app, Some(view.clone()));
     Ok(view)
+}
+
+/// Правка таймлайна пакетом операций (`timeline::Op`): проверяется и применяется целиком, один
+/// шаг истории с подписью `label`. Возвращает ID созданных клипов.
+#[tauri::command]
+#[specta::specta]
+pub fn timeline_apply(app: AppHandle, state: State<'_, ProjectState>, ops: Vec<timeline::Op>, label: String) -> AppResult<Vec<String>> {
+    let mut created = Vec::new();
+    let view = state.edit(&label, |doc| {
+        let t = &mut doc.timeline;
+        let mut e = timeline::Edit { tracks: &mut t.tracks, clips: &mut t.clips, markers: &mut t.markers };
+        for op in &ops {
+            created.extend(e.apply(op)?);
+        }
+        Ok(())
+    })?;
+    emit(&app, Some(view));
+    Ok(created)
 }
 
 #[tauri::command]

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+src-tauri/resources/render-bundle/*
+!src-tauri/resources/render-bundle/README.txt

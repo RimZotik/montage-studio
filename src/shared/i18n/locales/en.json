@@ -1,0 +1,626 @@
+{
+  "app": {
+    "title": "Montage Studio"
+  },
+  "menu": {
+    "file": "File",
+    "edit": "Edit",
+    "view": "View",
+    "window": "Window",
+    "help": "Help"
+  },
+  "cmd": {
+    "newProject": "New project",
+    "openProject": "Open project folder…",
+    "refreshChecks": "Check system again",
+    "refreshLimits": "Refresh Claude limits",
+    "palette": "Command palette",
+    "language": "Language: Русский",
+    "openLogs": "Open log folder",
+    "about": "About",
+    "quit": "Exit",
+    "home": "Home",
+    "projects": "Projects",
+    "library": "Library",
+    "undo": "Undo",
+    "redo": "Redo",
+    "reload": "Reload window",
+    "checkUpdates": "Check for updates",
+    "installUpdate": "Install update",
+    "closeProject": "Close project",
+    "chat": "Claude chat",
+    "settings": "Settings"
+  },
+  "tabs": {
+    "home": "Home",
+    "projects": "Projects",
+    "library": "Library",
+    "prepare": "Prepare",
+    "edit": "Edit",
+    "export": "Export"
+  },
+  "search": {
+    "projects": "Search projects"
+  },
+  "limits": {
+    "session": "Session",
+    "week": "Week",
+    "title": "Claude limits",
+    "sessionLong": "Session (5 hours)",
+    "weekLong": "Week",
+    "resetsAt": "resets {{when}}",
+    "none": "No data",
+    "noneHint": "Claude Code reports limits after a reply. Until the chat arrives, refresh manually: one short request to the lightest model.",
+    "updated": "Claude Code data as of {{when}}.",
+    "refresh": "Refresh",
+    "refreshing": "Requesting…",
+    "warn": "close to the limit",
+    "rejected": "limit reached"
+  },
+  "home": {
+    "start": "Start",
+    "version": "Montage Studio {{version}}",
+    "newProject": "New project",
+    "openFolder": "Open folder",
+    "fromTemplate": "From template",
+    "soon": "soon",
+    "ready": "Readiness",
+    "recheck": "Check again",
+    "checking": "Checking…",
+    "install": "How to install",
+    "recent": "Recent projects",
+    "all": "All",
+    "emptyTitle": "No projects yet",
+    "emptyText": "Create a project or open the folder of an existing one — it will show up here.",
+    "missing": "Folder not found",
+    "forget": "Remove from list",
+    "reveal": "Show in folder",
+    "created": "Project “{{name}}” created.",
+    "statProjects": "projects",
+    "statThisMonth": "opened this month",
+    "statClaude": "of a Claude session per project on average",
+    "statTools": "custom tools",
+    "hw": "{{cpu}} · {{threads}} threads · {{memory}} GB",
+    "gpu": "GPU: {{gpu}}"
+  },
+  "tool": {
+    "claude": "Claude Code",
+    "node": "Node.js",
+    "ffmpeg": "ffmpeg",
+    "ffprobe": "ffprobe",
+    "missing": "not found",
+    "broken": "does not start",
+    "fromComponents": "component",
+    "fromSystem": "system"
+  },
+  "status": {
+    "allReady": "All components found",
+    "missingCount": "Missing: {{list}}",
+    "checking": "Checking system…",
+    "claude": "Claude Code {{version}}",
+    "noClaude": "Claude Code not found",
+    "errors": "Errors: {{count}}",
+    "errorsAsk": "The studio log has errors. Look at them (log_errors) and briefly say what may cause them and what to do.",
+    "skip": "Dismiss",
+    "askClaude": "Ask Claude",
+    "needProject": "Open a project — Claude works in the project chat"
+  },
+  "newProject": {
+    "title": "New project",
+    "name": "Name",
+    "namePlaceholder": "For example, Launch promo",
+    "folder": "Folder",
+    "choose": "Choose…",
+    "chooseFolder": "Choose a folder for the project",
+    "format": "Format",
+    "vertical": "Vertical",
+    "horizontal": "Horizontal",
+    "square": "Square",
+    "fps": "Frame rate",
+    "create": "Create",
+    "cancel": "Cancel"
+  },
+  "palette": {
+    "placeholder": "Command…",
+    "empty": "Nothing found"
+  },
+  "soon": {
+    "page": "This page arrives in one of the next versions.",
+    "edit": "The editing timeline arrives in version 0.6.",
+    "export": "Export and the render queue arrive in version 0.8."
+  },
+  "error": {
+    "notProject": "The folder has no project.json — it is not a studio project.",
+    "badProject": "The project's project.json is damaged.",
+    "folderNotEmpty": "This folder already exists and is not empty.",
+    "invalidName": "The name is empty or too long.",
+    "claudeMissing": "Claude Code not found.",
+    "claudeNoLimits": "Claude Code reported no limits — make sure you are signed in with a subscription.",
+    "claudeStart": "Could not start Claude Code.",
+    "unknown": "Something went wrong: {{message}}",
+    "invalidSequence": "These frame settings do not fit: size 16–8192 and even, frame rate 1–240.",
+    "newerProject": "The project was saved by a newer app version — update the app.",
+    "noProject": "No project is open.",
+    "updateInstall": "The update did not install — try again.",
+    "overlap": "Clips on one track cannot overlap.",
+    "invalidEdit": "This edit does not fit.",
+    "trackLocked": "The track is locked.",
+    "nothingToUndo": "The last change was not made by Claude.",
+    "timelineChanged": "The timeline changed while the tool was working: run it again",
+    "toolFailed": "The tool could not run: select suitable clips and check the tracks",
+    "renderEngineMissing": "The render engine is not installed: install it on the Export page",
+    "emptyTimeline": "The timeline has no clips",
+    "exportBusy": "An export is already running",
+    "packReadonly": "The base pack cannot be changed: save a copy",
+    "noCaptions": "The captions track is empty",
+    "badCaptions": "Could not read the captions file: use .srt, .vtt or .ass with lines",
+    "notExport": "This file is not among the finished videos",
+    "badPreview": "A preview can only use a frame of this project",
+    "invalidCache": "Unknown cache",
+    "invalidSetting": "Setting not saved: the value is too large"
+  },
+  "install": {
+    "install": "Install · {{mb}} MB",
+    "update": "Update",
+    "version": "Version {{version}}",
+    "cancel": "Cancel",
+    "verify": "verifying",
+    "extract": "unpacking",
+    "download": "downloading",
+    "error": {
+      "network": "Download failed — check the connection and retry.",
+      "checksum": "The file arrived damaged — retry.",
+      "badArchive": "The archive did not unpack — retry.",
+      "io": "Could not write files to disk.",
+      "other": "Installation failed — retry."
+    },
+    "withFfmpeg": "comes with ffmpeg"
+  },
+  "update": {
+    "install": "Update to {{version}}",
+    "downloading": "Downloading update {{version}}: {{pct}}%"
+  },
+  "prepare": {
+    "media": "Media",
+    "rules": "Project rules",
+    "project": "Project",
+    "name": "Name",
+    "folder": "Folder",
+    "sequence": "Sequence",
+    "size": "Frame size",
+    "w": "w",
+    "h": "h",
+    "background": "Background",
+    "undoHint": "Changes are saved at once; undo with Ctrl+Z.",
+    "import": "Import media",
+    "drop": "Drop files into the window",
+    "dropHint": "or click — we sort them into folders",
+    "emptyCat": "Empty",
+    "moveTo": "Move to",
+    "imported": "Files added: {{count}}",
+    "dropRelease": "Release — files go into the project",
+    "skipped": {
+      "busy": "“{{name}}” is open in another program — close it and drop again.",
+      "unsupported": "“{{name}}” — this format is not supported.",
+      "io": "“{{name}}” was not copied."
+    }
+  },
+  "projects": {
+    "name": "Name",
+    "format": "Format",
+    "opened": "Opened",
+    "created": "Created",
+    "folder": "Folder",
+    "nothing": "Nothing found."
+  },
+  "chat": {
+    "empty": "Tell what video we are making — Claude will help write the brief, rules and plan.",
+    "try1": "Let's write the project brief together",
+    "try2": "Suggest a structure for a 30-second video",
+    "placeholder": "Message Claude…",
+    "hint": "Enter — send, Shift+Enter — new line",
+    "stop": "Stop",
+    "newSession": "New conversation",
+    "accept": "Accept",
+    "edit": "Edit",
+    "reject": "Reject",
+    "sendEdits": "Send edits",
+    "writeEdits": "Write changes…",
+    "denied": "Not allowed in the studio",
+    "stopped": "Reply stopped",
+    "sec": "s",
+    "tokens": "tokens",
+    "kind": {
+      "plan": "Plan",
+      "tool": "Tool",
+      "effect": "Effect",
+      "smart": "Smart clip",
+      "rule": "Rule",
+      "project": "Project"
+    },
+    "verdict": {
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "edited": "Edits sent",
+      "comment": "Comment sent"
+    },
+    "tool": {
+      "Read": "Reads a file",
+      "Glob": "Finds files",
+      "Grep": "Searches files",
+      "Edit": "Edits rules",
+      "Write": "Writes rules",
+      "mcp__studio__project_summary": "Looks at the project",
+      "mcp__studio__media_list": "Looks at media",
+      "mcp__studio__timeline_get": "Reads the timeline",
+      "mcp__studio__timeline_apply": "Edits the timeline",
+      "mcp__studio__ui_seek": "Moves the playhead",
+      "mcp__studio__ui_select": "Selects clips",
+      "mcp__studio__ui_tab": "Opens a tab",
+      "mcp__studio__log_errors": "Reads the error log",
+      "project_summary": "Looks at the project",
+      "media_list": "Looks at media",
+      "timeline_get": "Looks at the timeline",
+      "timeline_apply": "Edits the timeline",
+      "ui_seek": "Moves the playhead",
+      "ui_select": "Selects clips",
+      "ui_tab": "Opens a tab",
+      "log_errors": "Reads the log",
+      "library_list": "Searches the library",
+      "library_get": "Reads a library item",
+      "library_save": "Saves to the library",
+      "pack_edit": "Changes packs",
+      "effect_apply": "Applies an effect",
+      "tool_run": "Runs a tool",
+      "style_apply": "Applies a style",
+      "sound_add": "Places a sound",
+      "speech_transcribe": "Recognizes speech",
+      "speech_find": "Searches words",
+      "audio_analyze": "Measures sound",
+      "audio_peaks": "Finds music hits",
+      "render_frame": "Looks at a frame",
+      "export_start": "Starts the export",
+      "export_status": "Checks the export",
+      "ToolSearch": "Picks tools"
+    },
+    "undoTurn": "Undo Claude's changes",
+    "modelHint": "Claude model for this chat. Sonnet is faster and cheaper, Opus is for hard tasks.",
+    "models": {
+      "sonnet": "Sonnet",
+      "opus": "Opus",
+      "haiku": "Haiku",
+      "auto": "Auto"
+    },
+    "actions": "Actions: {{count}}"
+  },
+  "media": {
+    "footage": "Footage",
+    "voice": "Voice",
+    "music": "Music",
+    "sfx": "Sounds",
+    "images": "Images"
+  },
+  "rules": {
+    "brief": "Brief",
+    "rules": "Rules",
+    "style": "Style",
+    "script": "Script",
+    "state": {
+      "saved": "Saved",
+      "dirty": "Edited",
+      "saving": "Saving…"
+    },
+    "hint": {
+      "brief": "What the video is about, for whom, the goal, length, tone. Claude reads this before every reply.",
+      "rules": "Musts and don'ts: pacing, margins, captions, ending…",
+      "style": "Colors, fonts, animation character, sounds.",
+      "script": "Voiceover text and the scene plan."
+    }
+  },
+  "preview": {
+    "tab": "Preview",
+    "play": "Play / pause (Space)",
+    "loop": "Loop",
+    "mute": "Sound",
+    "noWave": "The waveform appears after processing"
+  },
+  "edit": {
+    "safe": "Platform zone",
+    "mute": "Mute",
+    "lock": "Lock",
+    "empty": "Drag files from media onto tracks",
+    "track": {
+      "video": "video",
+      "audio": "audio",
+      "captions": "captions"
+    },
+    "inspector": "Properties",
+    "noSelection": "Select a clip on the timeline.",
+    "addCaption": "Caption at playhead",
+    "captionText": "Text",
+    "caption": "Caption",
+    "volume": "Volume",
+    "opacity": "Opacity",
+    "scale": "Scale",
+    "fadeIn": "Fade in",
+    "fadeOut": "Fade out",
+    "fr": "fr",
+    "split": "Split",
+    "delete": "Delete",
+    "keys": {
+      "space": {
+        "k": "Space",
+        "v": "play / pause"
+      },
+      "split": {
+        "k": "S",
+        "v": "split at playhead"
+      },
+      "delete": {
+        "k": "Delete",
+        "v": "delete"
+      },
+      "ripple": {
+        "k": "Shift+Delete",
+        "v": "ripple delete"
+      },
+      "marker": {
+        "k": "M",
+        "v": "marker"
+      },
+      "zoom": {
+        "k": "Ctrl+wheel",
+        "v": "zoom"
+      },
+      "tools": {
+        "k": "V, C",
+        "v": "select, blade"
+      },
+      "copy": {
+        "k": "Ctrl+D",
+        "v": "duplicate"
+      }
+    },
+    "claudeBusy": "Claude is working on the timeline — wait or stop",
+    "safeHint": "Dashed frame — the safe zone of a vertical video: anything outside may be covered by platform buttons and captions. Keep text and key things inside.",
+    "left": {
+      "media": "Media",
+      "effects": "Effects"
+    },
+    "trackVolume": "Track {{name}}",
+    "speed": "Speed",
+    "tools": {
+      "select": "Select",
+      "razor": "Blade: a click cuts the clip",
+      "split": "Split at playhead",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "ripple": "Ripple delete",
+      "addText": "Add text",
+      "marker": "Marker",
+      "snap": "Snapping",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "fit": "Fit the video",
+      "front": "Bring to front",
+      "back": "Send to back",
+      "link": "Link",
+      "unlink": "Unlink",
+      "effects": "Effects",
+      "selectAll": "Select all",
+      "track": "Track",
+      "addVideoTrack": "Add video track",
+      "addAudioTrack": "Add audio track",
+      "removeTrack": "Remove track",
+      "barHint": "Drag to scroll, drag the edges to zoom"
+    },
+    "captionMode": {
+      "burned": "Own captions: text in the picture",
+      "file": "Video captions: a file for the platform",
+      "burnedShort": "own",
+      "fileShort": "file",
+      "import": "Load a captions file…",
+      "save": "Save captions files",
+      "imported": "Lines loaded: {{count}}",
+      "saved": "Captions files saved next to the videos"
+    },
+    "manySelected": "{{count}} clips selected. Properties belong to one clip; moving, splitting and deleting work on all.",
+    "trackPanel": {
+      "title": "Track",
+      "open": "Track properties",
+      "all": "All clips on the track: {{count}}",
+      "effects": "Effects of the whole track",
+      "add": "Add an effect to the whole track",
+      "onClips": "Already on clips",
+      "toTrack": "Make it a track effect",
+      "removeAll": "Remove from all clips",
+      "mode": {
+        "burned": "Own",
+        "file": "As a file"
+      },
+      "hint": {
+        "captions": "Everything set here applies to current and new captions.",
+        "video": "Everything set here applies to current and new clips of this track.",
+        "audio": "Volume and effects of the whole track."
+      }
+    },
+    "fit": {
+      "cover": "Fill the frame",
+      "contain": "Show whole"
+    }
+  },
+  "crash": {
+    "title": "The page did not open",
+    "logged": "The error is in the log — see the errors popup below.",
+    "retry": "Try again"
+  },
+  "library": {
+    "packs": "Packs",
+    "allItems": "All",
+    "newPack": "New pack",
+    "packName": "Pack name",
+    "search": "Search effects and tools",
+    "import": "Import archive",
+    "export": "Pack archive",
+    "deletePack": "Delete pack",
+    "openFolder": "Open folder",
+    "nothing": "Nothing found",
+    "pick": "Pick an effect or a tool",
+    "copy": "Save a copy",
+    "copyHint": "A copy in the main pack with the current values: you can change it",
+    "copied": "Copy saved to the main pack",
+    "exported": "Items in the archive: {{count}}",
+    "addToPack": "Add to pack",
+    "inPack": "Pack: {{pack}}",
+    "revision": "version {{n}}",
+    "uses": "used {{count}} times",
+    "applied": "Applied to clips: {{count}}",
+    "toggle": "Turn on or off",
+    "saveSetting": "Save this setting to the library",
+    "selectClip": "Select a clip or drag the effect onto it",
+    "run": "Apply",
+    "running": "Working…",
+    "toolDone": "Done. Clips changed: {{count}}",
+    "modelNeeded": "Speech recognition needs a model that runs on this computer: {{mb}} MB, downloaded once.",
+    "modelInstall": "Download the model",
+    "kind": {
+      "effect": "effect",
+      "tool": "tool",
+      "style": "style",
+      "sound": "sound",
+      "component": "code scene"
+    },
+    "author": {
+      "studio": "studio",
+      "user": "user",
+      "claude": "Claude"
+    },
+    "filter": {
+      "all": "All",
+      "tool": "Tools",
+      "video": "Video",
+      "audio": "Sound",
+      "text": "Text",
+      "transition": "Transitions",
+      "sound": "Sounds",
+      "style": "Styles",
+      "component": "Scenes"
+    },
+    "target": {
+      "video": "Video",
+      "audio": "Sound",
+      "text": "Text",
+      "sequence": "Whole sequence",
+      "transition": "Transition"
+    },
+    "soundAdded": "Sound placed at the playhead",
+    "styleApplied": "Style added to the project rules: Claude follows it from the next message",
+    "deleteSure": "Delete with its history?",
+    "catalog": "Catalog",
+    "close": "Close",
+    "back": "Back to the list",
+    "before": "Before",
+    "after": "After",
+    "applyToSelected": "Apply to selection",
+    "applyStyle": "Apply style",
+    "listen": "Listen",
+    "save": "Save",
+    "saved": "Saved",
+    "removeFromPack": "Remove from pack",
+    "addedTo": "Added to “{{pack}}”",
+    "use": {
+      "effect": "Apply to selection",
+      "sound": "Place at playhead",
+      "style": "Apply style",
+      "tool": "Open panel",
+      "component": "Place at playhead"
+    },
+    "copySuffix": "copy",
+    "deletePackSure": "Really delete? Items move to Main",
+    "appliedTrack": "Effect on the whole track",
+    "applyToTrack": "Apply to the whole track",
+    "sceneParts": "A set of parts: Claude imports it from its scenes",
+    "scenePlaced": "Scene on the timeline"
+  },
+  "export": {
+    "title": "Export the video",
+    "name": "File name",
+    "quality": "Quality",
+    "more": "More",
+    "codec": "Codec",
+    "half": "Half size (draft)",
+    "estimate": "About {{mb}} MB",
+    "start": "Export",
+    "cancel": "Stop",
+    "files": "Finished files",
+    "noFiles": "Finished videos appear here",
+    "play": "Watch",
+    "reveal": "Show in folder",
+    "mb": "MB",
+    "mbps": "Mbit/s",
+    "engineNeeded": "Rendering needs an engine: installed once, about 300 MB.",
+    "nodeNeeded": "Install Node.js on the home page first.",
+    "engineInstall": "Install the engine",
+    "q": {
+      "high": {
+        "name": "For social networks",
+        "hint": "Great picture at a sensible size. Fits YouTube, TikTok, Instagram"
+      },
+      "max": {
+        "name": "Maximum",
+        "hint": "A margin for archive and further editing, the file is twice as big"
+      },
+      "compact": {
+        "name": "Compact",
+        "hint": "A small file to send and review"
+      }
+    },
+    "c": {
+      "h264": "H.264: fits everywhere",
+      "h265": "H.265: smaller file, but not all sites and players"
+    },
+    "phase": {
+      "install": "Installing the engine",
+      "render": "Rendering frames",
+      "encode": "Encoding",
+      "finish": "Finishing"
+    },
+    "folder": "Folder",
+    "folderChoose": "Choose a folder",
+    "folderReset": "Project folder",
+    "softCaptions": "Captions go next to the video as .srt, .vtt, .ass; not in the picture",
+    "captionFiles": "Captions files next to it: {{list}}",
+    "delete": "Delete the file",
+    "deleteSure": "Click again to delete",
+    "noFrames": "The timeline is empty",
+    "previewCap": "This is how the video will look",
+    "backToProject": "Back to the project",
+    "nothingToShow": "The finished video will be here"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "model": "Claude model",
+    "projectsDir": "New projects folder",
+    "notSet": "Not selected",
+    "safeZone": "Platform zone in the monitor",
+    "snap": "Timeline snapping",
+    "cache": "Cache",
+    "cacheHint": "Clearing is safe: everything is rebuilt when needed.",
+    "clear": "Clear",
+    "reset": "Reset interface settings",
+    "done": "Done",
+    "caches": {
+      "thumbs": "Project thumbnails",
+      "proxy": "Light copies for the monitor",
+      "speech": "Speech transcripts",
+      "frames": "Check frames",
+      "sounds": "Sounds for listening"
+    }
+  },
+  "smart": {
+    "ask": "This project has scenes in code. They run with the app's rights. Allow only if you trust the source of the project.",
+    "trust": "Trust this project",
+    "data": "Scene data"
+  }
+}

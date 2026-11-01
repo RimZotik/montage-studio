@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Montage Studio",
+  "version": "1.0.0",
+  "identifier": "app.montagestudio.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1430",
+    "beforeBuildCommand": "npm run build:render && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Montage Studio",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "maximized": false,
+        "center": true,
+        "decorations": false,
+        "shadow": true,
+        "backgroundColor": "#FFFFFF",
+        "dragDropEnabled": true,
+        "zoomHotkeysEnabled": false,
+        "visible": false,
+        "additionalBrowserArgs": "--disable-features=CalculateNativeWinOcclusion --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval'; img-src 'self' data: asset: http://asset.localhost; media-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; font-src 'self' data:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**/media/**",
+          "**/.studio/cache/thumbs/*",
+          "**/output/*",
+          "**/.studio/cache/proxy/*"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/claude/core-rules.md",
+      "resources/render-bundle/**/*"
+    ],
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEyNEU1NTZEN0UzRUE4NjAKUldSZ3FENStiVlZPb3VKaUR0SitMengyWjVWbDVJL2FyazFtK3crSWd4MlkwZU4rYlc4NVlUTHMK",
+      "endpoints": [
+        "https://github.com/RimZotik/montage-studio/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
+  }
+}

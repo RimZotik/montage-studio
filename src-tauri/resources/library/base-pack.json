@@ -1,0 +1,2753 @@
+{
+ "pack": {
+  "id": "base",
+  "name": {
+   "ru": "Базовый",
+   "en": "Base"
+  },
+  "description": {
+   "ru": "Общие приемы монтажа, которые идут с программой",
+   "en": "General editing basics that come with the app"
+  },
+  "author": "studio",
+  "readonly": true,
+  "packVersion": 5
+ },
+ "items": [
+  {
+   "id": "fade-in",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Плавное появление",
+    "en": "Fade in"
+   },
+   "description": {
+    "ru": "Клип проявляется из прозрачности",
+    "en": "The clip appears from transparent"
+   },
+   "targets": [
+    "video",
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 3,
+     "step": 0.05,
+     "unit": "s",
+     "default": 0.5
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "opacity",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "fade-out",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Плавное исчезновение",
+    "en": "Fade out"
+   },
+   "description": {
+    "ru": "Клип растворяется к концу",
+    "en": "The clip dissolves at the end"
+   },
+   "targets": [
+    "video",
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 3,
+     "step": 0.05,
+     "unit": "s",
+     "default": 0.5
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "opacity",
+      "anchor": "end",
+      "keys": [
+       [
+        "-$duration",
+        1
+       ],
+       [
+        0,
+        0
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "zoom-slow",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Медленное приближение",
+    "en": "Slow zoom"
+   },
+   "description": {
+    "ru": "Кадр плавно растет на всю длину клипа",
+    "en": "The frame slowly grows over the whole clip"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "from",
+     "label": {
+      "ru": "Начальный масштаб",
+      "en": "Start scale"
+     },
+     "min": 0.5,
+     "max": 3,
+     "step": 0.01,
+     "default": 1
+    },
+    {
+     "type": "slider",
+     "id": "to",
+     "label": {
+      "ru": "Конечный масштаб",
+      "en": "End scale"
+     },
+     "min": 0.5,
+     "max": 3,
+     "step": 0.01,
+     "default": 1.15
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "scale",
+      "anchor": "span",
+      "keys": [
+       [
+        0,
+        "$from"
+       ],
+       [
+        1,
+        "$to"
+       ]
+      ],
+      "ease": "linear"
+     }
+    ]
+   }
+  },
+  {
+   "id": "punch-in",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Удар приближением",
+    "en": "Punch in"
+   },
+   "description": {
+    "ru": "Резкий толчок масштаба в начале клипа: для нарезки под бит",
+    "en": "A sharp scale hit at the clip start: for cuts to the beat"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "power",
+     "label": {
+      "ru": "Сила",
+      "en": "Power"
+     },
+     "min": 1,
+     "max": 2,
+     "step": 0.01,
+     "default": 1.18
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 1,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.22
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "scale",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$power"
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ],
+      "ease": "out"
+     }
+    ]
+   }
+  },
+  {
+   "id": "flash",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Вспышка",
+    "en": "Flash"
+   },
+   "description": {
+    "ru": "Яркая вспышка в начале клипа",
+    "en": "A bright flash at the clip start"
+   },
+   "targets": [
+    "video",
+    "transition"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "power",
+     "label": {
+      "ru": "Яркость",
+      "en": "Brightness"
+     },
+     "min": 1,
+     "max": 6,
+     "step": 0.1,
+     "default": 3
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.03,
+     "max": 1,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.15
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "brightness",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$power"
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ],
+      "ease": "out"
+     }
+    ]
+   }
+  },
+  {
+   "id": "shake",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Тряска",
+    "en": "Shake"
+   },
+   "description": {
+    "ru": "Дрожание кадра",
+    "en": "A trembling frame"
+   },
+   "targets": [
+    "video",
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "amp",
+     "label": {
+      "ru": "Размах",
+      "en": "Amount"
+     },
+     "min": 0,
+     "max": 80,
+     "step": 1,
+     "unit": "px",
+     "default": 14
+    },
+    {
+     "type": "slider",
+     "id": "freq",
+     "label": {
+      "ru": "Скорость",
+      "en": "Speed"
+     },
+     "min": 1,
+     "max": 30,
+     "step": 0.5,
+     "unit": "Hz",
+     "default": 11
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "x",
+      "wave": {
+       "amp": "$amp",
+       "freq": "$freq"
+      }
+     },
+     {
+      "prop": "y",
+      "wave": {
+       "amp": "$amp*0.7",
+       "freq": "$freq*1.3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "blur",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Размытие",
+    "en": "Blur"
+   },
+   "description": {
+    "ru": "Размывает кадр",
+    "en": "Blurs the frame"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "amount",
+     "label": {
+      "ru": "Сила",
+      "en": "Amount"
+     },
+     "min": 0,
+     "max": 60,
+     "step": 0.5,
+     "unit": "px",
+     "default": 8
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "blur",
+      "value": "$amount"
+     }
+    ]
+   }
+  },
+  {
+   "id": "color-adjust",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Коррекция цвета",
+    "en": "Color adjust"
+   },
+   "description": {
+    "ru": "Яркость, контраст, насыщенность и оттенок",
+    "en": "Brightness, contrast, saturation and hue"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "brightness",
+     "label": {
+      "ru": "Яркость",
+      "en": "Brightness"
+     },
+     "min": 0,
+     "max": 2,
+     "step": 0.01,
+     "default": 1
+    },
+    {
+     "type": "slider",
+     "id": "contrast",
+     "label": {
+      "ru": "Контраст",
+      "en": "Contrast"
+     },
+     "min": 0,
+     "max": 2,
+     "step": 0.01,
+     "default": 1
+    },
+    {
+     "type": "slider",
+     "id": "saturate",
+     "label": {
+      "ru": "Насыщенность",
+      "en": "Saturation"
+     },
+     "min": 0,
+     "max": 3,
+     "step": 0.01,
+     "default": 1
+    },
+    {
+     "type": "slider",
+     "id": "hue",
+     "label": {
+      "ru": "Оттенок",
+      "en": "Hue"
+     },
+     "min": -180,
+     "max": 180,
+     "step": 1,
+     "unit": "°",
+     "default": 0
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "brightness",
+      "value": "$brightness"
+     },
+     {
+      "prop": "contrast",
+      "value": "$contrast"
+     },
+     {
+      "prop": "saturate",
+      "value": "$saturate"
+     },
+     {
+      "prop": "hue",
+      "value": "$hue"
+     }
+    ]
+   }
+  },
+  {
+   "id": "black-white",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Черно-белое",
+    "en": "Black and white"
+   },
+   "description": {
+    "ru": "Убирает цвет",
+    "en": "Removes color"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "amount",
+     "label": {
+      "ru": "Сила",
+      "en": "Amount"
+     },
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "default": 1
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "grayscale",
+      "value": "$amount"
+     }
+    ]
+   }
+  },
+  {
+   "id": "sepia",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Сепия",
+    "en": "Sepia"
+   },
+   "description": {
+    "ru": "Теплый старый снимок",
+    "en": "A warm old photo"
+   },
+   "targets": [
+    "video"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "amount",
+     "label": {
+      "ru": "Сила",
+      "en": "Amount"
+     },
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "default": 0.8
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "sepia",
+      "value": "$amount"
+     }
+    ]
+   }
+  },
+  {
+   "id": "crossfade",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Наплыв",
+    "en": "Crossfade"
+   },
+   "description": {
+    "ru": "Переход: клип проявляется поверх предыдущего. Клипы должны перекрываться",
+    "en": "Transition: the clip appears over the previous one. Clips must overlap"
+   },
+   "targets": [
+    "transition"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 3,
+     "step": 0.05,
+     "unit": "s",
+     "default": 0.5
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "opacity",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ],
+      "ease": "inOut"
+     }
+    ]
+   }
+  },
+  {
+   "id": "slide-in",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Въезд сбоку",
+    "en": "Slide in"
+   },
+   "description": {
+    "ru": "Переход: клип въезжает в кадр",
+    "en": "Transition: the clip slides into the frame"
+   },
+   "targets": [
+    "transition",
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "distance",
+     "label": {
+      "ru": "Откуда",
+      "en": "From"
+     },
+     "min": -2000,
+     "max": 2000,
+     "step": 10,
+     "unit": "px",
+     "default": 1080
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 2,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.3
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "x",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$distance"
+       ],
+       [
+        "$duration",
+        0
+       ]
+      ],
+      "ease": "out"
+     }
+    ]
+   }
+  },
+  {
+   "id": "zoom-transition",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Переход приближением",
+    "en": "Zoom transition"
+   },
+   "description": {
+    "ru": "Клип появляется из сильного приближения с размытием",
+    "en": "The clip appears from a strong zoom with blur"
+   },
+   "targets": [
+    "transition"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "power",
+     "label": {
+      "ru": "Приближение",
+      "en": "Zoom"
+     },
+     "min": 1,
+     "max": 4,
+     "step": 0.01,
+     "default": 1.8
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 2,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.3
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "scale",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$power"
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ],
+      "ease": "out"
+     },
+     {
+      "prop": "blur",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        24
+       ],
+       [
+        "$duration",
+        0
+       ]
+      ],
+      "ease": "out"
+     },
+     {
+      "prop": "opacity",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration*0.5",
+        1
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "text-pop",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Текст: выскакивает",
+    "en": "Text: pop"
+   },
+   "description": {
+    "ru": "Текст появляется упругим увеличением",
+    "en": "The text appears with a springy scale"
+   },
+   "targets": [
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "from",
+     "label": {
+      "ru": "Начальный размер",
+      "en": "Start size"
+     },
+     "min": 0,
+     "max": 1,
+     "step": 0.01,
+     "default": 0.5
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 1,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.22
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "scale",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$from"
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ],
+      "ease": "back"
+     },
+     {
+      "prop": "opacity",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration*0.4",
+        1
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "text-rise",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Текст: всплывает",
+    "en": "Text: rise"
+   },
+   "description": {
+    "ru": "Текст поднимается снизу и проявляется",
+    "en": "The text rises from below and appears"
+   },
+   "targets": [
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "distance",
+     "label": {
+      "ru": "Расстояние",
+      "en": "Distance"
+     },
+     "min": 0,
+     "max": 400,
+     "step": 5,
+     "unit": "px",
+     "default": 60
+    },
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 1,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.25
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "y",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        "$distance"
+       ],
+       [
+        "$duration",
+        0
+       ]
+      ],
+      "ease": "out"
+     },
+     {
+      "prop": "opacity",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "text-color",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Текст: цвет",
+    "en": "Text: color"
+   },
+   "description": {
+    "ru": "Цвет букв и плашка за текстом",
+    "en": "Letter color and a plate behind the text"
+   },
+   "targets": [
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "color",
+     "id": "color",
+     "label": {
+      "ru": "Цвет текста",
+      "en": "Text color"
+     },
+     "default": "#FFD84D"
+    },
+    {
+     "type": "color",
+     "id": "background",
+     "label": {
+      "ru": "Плашка",
+      "en": "Plate"
+     },
+     "default": "#00000000"
+    }
+   ],
+   "spec": {
+    "text": {
+     "color": "$color",
+     "background": "$background"
+    }
+   }
+  },
+  {
+   "id": "audio-fade-in",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Звук: нарастание",
+    "en": "Audio: fade in"
+   },
+   "description": {
+    "ru": "Звук плавно нарастает с начала клипа",
+    "en": "The sound rises from the clip start"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 10,
+     "step": 0.05,
+     "unit": "s",
+     "default": 1
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "volume",
+      "anchor": "start",
+      "keys": [
+       [
+        0,
+        0
+       ],
+       [
+        "$duration",
+        1
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "audio-fade-out",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Звук: затухание",
+    "en": "Audio: fade out"
+   },
+   "description": {
+    "ru": "Звук плавно затихает к концу клипа",
+    "en": "The sound falls towards the clip end"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "duration",
+     "label": {
+      "ru": "Длительность",
+      "en": "Duration"
+     },
+     "min": 0.05,
+     "max": 10,
+     "step": 0.05,
+     "unit": "s",
+     "default": 1
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "volume",
+      "anchor": "end",
+      "keys": [
+       [
+        "-$duration",
+        1
+       ],
+       [
+        0,
+        0
+       ]
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "remove-silence",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "removeSilence",
+   "name": {
+    "ru": "Вырезать паузы",
+    "en": "Remove pauses"
+   },
+   "description": {
+    "ru": "Находит паузы в речи и вырезает их со сдвигом; связанная картинка и субтитры едут вместе",
+    "en": "Finds pauses in speech and removes them with ripple; linked video and captions move along"
+   },
+   "targets": [
+    "sequence",
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "track",
+     "label": {
+      "ru": "Дорожка голоса (если клипы не выбраны)",
+      "en": "Voice track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "slider",
+     "id": "threshold",
+     "label": {
+      "ru": "Тишина тише чем",
+      "en": "Silence below"
+     },
+     "min": -70,
+     "max": -10,
+     "step": 1,
+     "unit": "dB",
+     "default": -35
+    },
+    {
+     "type": "slider",
+     "id": "minPause",
+     "label": {
+      "ru": "Пауза от",
+      "en": "Pause from"
+     },
+     "min": 0.1,
+     "max": 3,
+     "step": 0.05,
+     "unit": "s",
+     "default": 0.5
+    },
+    {
+     "type": "slider",
+     "id": "pad",
+     "label": {
+      "ru": "Запас у речи",
+      "en": "Margin near speech"
+     },
+     "min": 0,
+     "max": 0.5,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.1
+    },
+    {
+     "type": "toggle",
+     "id": "markersOnly",
+     "label": {
+      "ru": "Только отметить маркерами",
+      "en": "Mark only"
+     },
+     "default": false
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.7,
+     0.9,
+     0.6,
+     0,
+     0,
+     0,
+     0,
+     0.8,
+     0.5,
+     0.9,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0.6,
+     0.8,
+     0.7,
+     0.5,
+     0,
+     0,
+     0,
+     0.9,
+     0.7,
+     0.6,
+     0.8
+    ],
+    "after": [
+     0.7,
+     0.9,
+     0.6,
+     0.8,
+     0.5,
+     0.9,
+     0.6,
+     0.8,
+     0.7,
+     0.5,
+     0.9,
+     0.7,
+     0.6,
+     0.8
+    ]
+   }
+  },
+  {
+   "id": "captions-from-speech",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "captionsFromSpeech",
+   "name": {
+    "ru": "Субтитры по голосу",
+    "en": "Captions from speech"
+   },
+   "description": {
+    "ru": "Распознает речь на этом компьютере и расставляет субтитры точно по словам",
+    "en": "Recognizes speech on this computer and places captions right on the words"
+   },
+   "targets": [
+    "sequence",
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "voiceTrack",
+     "label": {
+      "ru": "Дорожка голоса (если клипы не выбраны)",
+      "en": "Voice track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "select",
+     "id": "language",
+     "label": {
+      "ru": "Язык",
+      "en": "Language"
+     },
+     "default": "auto",
+     "options": [
+      {
+       "value": "auto",
+       "label": {
+        "ru": "Определить",
+        "en": "Detect"
+       }
+      },
+      {
+       "value": "ru",
+       "label": {
+        "ru": "Русский",
+        "en": "Russian"
+       }
+      },
+      {
+       "value": "en",
+       "label": {
+        "ru": "Английский",
+        "en": "English"
+       }
+      }
+     ]
+    },
+    {
+     "type": "section",
+     "label": {
+      "ru": "Текст",
+      "en": "Text"
+     }
+    },
+    {
+     "type": "number",
+     "id": "maxWords",
+     "label": {
+      "ru": "Слов на экране (0 — по кадру)",
+      "en": "Words on screen (0 — fit the frame)"
+     },
+     "min": 0,
+     "max": 14,
+     "step": 1,
+     "default": 0
+    },
+    {
+     "type": "number",
+     "id": "maxChars",
+     "label": {
+      "ru": "Знаков в строке (0 — по кадру)",
+      "en": "Characters per line (0 — fit the frame)"
+     },
+     "min": 0,
+     "max": 90,
+     "step": 1,
+     "default": 0
+    },
+    {
+     "type": "slider",
+     "id": "minHold",
+     "label": {
+      "ru": "Слово держится минимум",
+      "en": "Word holds at least"
+     },
+     "min": 0.05,
+     "max": 1.5,
+     "step": 0.05,
+     "default": 0.3,
+     "unit": "s"
+    },
+    {
+     "type": "text",
+     "id": "skipWords",
+     "label": {
+      "ru": "Не показывать слова (через запятую)",
+      "en": "Hide words (comma separated)"
+     },
+     "default": ""
+    },
+    {
+     "type": "select",
+     "id": "animation",
+     "label": {
+      "ru": "Анимация",
+      "en": "Animation"
+     },
+     "default": "mix",
+     "options": [
+      {
+       "value": "none",
+       "label": {
+        "ru": "Без анимации",
+        "en": "None"
+       }
+      },
+      {
+       "value": "mix",
+       "label": {
+        "ru": "Разная у разных реплик",
+        "en": "Different per line"
+       }
+      },
+      {
+       "value": "text-pop",
+       "label": {
+        "ru": "Выскакивает",
+        "en": "Pop"
+       }
+      },
+      {
+       "value": "text-rise",
+       "label": {
+        "ru": "Всплывает",
+        "en": "Rise"
+       }
+      },
+      {
+       "value": "text-fly",
+       "label": {
+        "ru": "Вылет с возвратом",
+        "en": "Fly and back"
+       }
+      },
+      {
+       "value": "text-hit",
+       "label": {
+        "ru": "Удар",
+        "en": "Hit"
+       }
+      }
+     ]
+    },
+    {
+     "type": "select",
+     "id": "styleEffect",
+     "label": {
+      "ru": "Оформление",
+      "en": "Look"
+     },
+     "default": "text-style",
+     "options": [
+      {
+       "value": "none",
+       "label": {
+        "ru": "Обычное",
+        "en": "Default"
+       }
+      },
+      {
+       "value": "text-style",
+       "label": {
+        "ru": "Текст: оформление",
+        "en": "Text: look"
+       }
+      }
+     ]
+    },
+    {
+     "type": "toggle",
+     "id": "replace",
+     "label": {
+      "ru": "Заменить прежние субтитры",
+      "en": "Replace previous captions"
+     },
+     "default": true
+    }
+   ]
+  },
+  {
+   "id": "normalize-loudness",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "normalize",
+   "name": {
+    "ru": "Выровнять громкость",
+    "en": "Normalize loudness"
+   },
+   "description": {
+    "ru": "Измеряет громкость и доводит клипы до одного уровня, файл не меняется",
+    "en": "Measures loudness and brings clips to one level, the file is not changed"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "track",
+     "label": {
+      "ru": "Дорожка (если клипы не выбраны)",
+      "en": "Track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "slider",
+     "id": "target",
+     "label": {
+      "ru": "Целевая громкость",
+      "en": "Target loudness"
+     },
+     "min": -30,
+     "max": -6,
+     "step": 0.5,
+     "unit": "LUFS",
+     "default": -14,
+     "help": {
+      "ru": "−14 — обычный уровень коротких роликов",
+      "en": "−14 is the usual level for short videos"
+     }
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.068,
+     0.078,
+     0.126,
+     0.206,
+     0.263,
+     0.358,
+     0.381,
+     0.381,
+     0.379,
+     0.321,
+     0.236,
+     0.172,
+     0.087,
+     0.076,
+     0.056,
+     0.076,
+     0.079,
+     0.165,
+     0.23,
+     0.314,
+     0.376,
+     0.381,
+     0.381,
+     0.361,
+     0.277,
+     0.21,
+     0.134,
+     0.078,
+     0.071,
+     0.067,
+     0.078,
+     0.118,
+     0.199,
+     0.257,
+     0.35,
+     0.38,
+     0.38,
+     0.38,
+     0.331,
+     0.239,
+     0.18,
+     0.094,
+     0.077,
+     0.059,
+     0.074,
+     0.079,
+     0.158,
+     0.227,
+     0.303,
+     0.375,
+     0.381,
+     0.381,
+     0.368,
+     0.283,
+     0.217,
+     0.142,
+     0.078,
+     0.072,
+     0.064,
+     0.078,
+     0.11,
+     0.193,
+     0.247,
+     0.345
+    ],
+    "after": [
+     0.171,
+     0.195,
+     0.315,
+     0.514,
+     0.657,
+     0.895,
+     0.952,
+     0.952,
+     0.948,
+     0.802,
+     0.591,
+     0.431,
+     0.217,
+     0.19,
+     0.14,
+     0.19,
+     0.198,
+     0.412,
+     0.576,
+     0.786,
+     0.94,
+     0.952,
+     0.952,
+     0.902,
+     0.693,
+     0.526,
+     0.334,
+     0.195,
+     0.177,
+     0.167,
+     0.195,
+     0.294,
+     0.497,
+     0.642,
+     0.875,
+     0.951,
+     0.951,
+     0.949,
+     0.827,
+     0.598,
+     0.449,
+     0.234,
+     0.193,
+     0.148,
+     0.186,
+     0.197,
+     0.394,
+     0.568,
+     0.757,
+     0.938,
+     0.952,
+     0.952,
+     0.92,
+     0.708,
+     0.542,
+     0.355,
+     0.196,
+     0.18,
+     0.161,
+     0.195,
+     0.274,
+     0.483,
+     0.617,
+     0.863
+    ]
+   }
+  },
+  {
+   "id": "duck-music",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "duck",
+   "name": {
+    "ru": "Приглушить музыку под голос",
+    "en": "Duck music under voice"
+   },
+   "description": {
+    "ru": "Музыка сама становится тише, пока звучит голос, и возвращается в паузах",
+    "en": "The music gets quieter while the voice sounds and returns in the pauses"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "voiceTrack",
+     "label": {
+      "ru": "Дорожка голоса",
+      "en": "Voice track"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "track",
+     "id": "musicTrack",
+     "label": {
+      "ru": "Дорожка музыки",
+      "en": "Music track"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a2"
+    },
+    {
+     "type": "slider",
+     "id": "amount",
+     "label": {
+      "ru": "На сколько тише",
+      "en": "How much quieter"
+     },
+     "min": -40,
+     "max": 0,
+     "step": 1,
+     "unit": "dB",
+     "default": -12
+    },
+    {
+     "type": "slider",
+     "id": "attack",
+     "label": {
+      "ru": "Спад",
+      "en": "Attack"
+     },
+     "min": 0,
+     "max": 2,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.15
+    },
+    {
+     "type": "slider",
+     "id": "release",
+     "label": {
+      "ru": "Возврат",
+      "en": "Release"
+     },
+     "min": 0,
+     "max": 3,
+     "step": 0.01,
+     "unit": "s",
+     "default": 0.4
+    },
+    {
+     "type": "slider",
+     "id": "threshold",
+     "label": {
+      "ru": "Голос громче чем",
+      "en": "Voice above"
+     },
+     "min": -70,
+     "max": -10,
+     "step": 1,
+     "unit": "dB",
+     "default": -35
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7
+    ],
+    "after": [
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.7,
+     0.7,
+     0.7,
+     0.7,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22,
+     0.22
+    ]
+   }
+  },
+  {
+   "id": "text-style",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Текст: оформление",
+    "en": "Text: look"
+   },
+   "description": {
+    "ru": "Размер, цвет, обводка, толщина, заглавные, плашка",
+    "en": "Size, color, outline, weight, capitals, plate"
+   },
+   "targets": [
+    "text"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "size",
+     "label": {
+      "ru": "Размер",
+      "en": "Size"
+     },
+     "min": 16,
+     "max": 200,
+     "step": 1,
+     "default": 56,
+     "unit": "px"
+    },
+    {
+     "type": "color",
+     "id": "color",
+     "label": {
+      "ru": "Цвет",
+      "en": "Color"
+     },
+     "default": "#FFFFFF"
+    },
+    {
+     "type": "slider",
+     "id": "stroke",
+     "label": {
+      "ru": "Обводка",
+      "en": "Outline"
+     },
+     "min": 0,
+     "max": 12,
+     "step": 0.5,
+     "default": 2,
+     "unit": "px"
+    },
+    {
+     "type": "slider",
+     "id": "weight",
+     "label": {
+      "ru": "Толщина",
+      "en": "Weight"
+     },
+     "min": 300,
+     "max": 900,
+     "step": 100,
+     "default": 800
+    },
+    {
+     "type": "toggle",
+     "id": "uppercase",
+     "label": {
+      "ru": "Заглавные",
+      "en": "Capitals"
+     },
+     "default": true
+    },
+    {
+     "type": "color",
+     "id": "background",
+     "label": {
+      "ru": "Плашка",
+      "en": "Plate"
+     },
+     "default": "#00000000"
+    }
+   ],
+   "spec": {
+    "text": {
+     "size": "$size",
+     "color": "$color",
+     "stroke": "$stroke",
+     "weight": "$weight",
+     "uppercase": "$uppercase",
+     "background": "$background"
+    }
+   }
+  },
+  {
+   "id": "audio-gain",
+   "kind": "effect",
+   "author": "studio",
+   "name": {
+    "ru": "Звук: громкость",
+    "en": "Audio: gain"
+   },
+   "description": {
+    "ru": "Тише или громче, не меняя свойства клипа",
+    "en": "Quieter or louder without changing the clip"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "gain",
+     "label": {
+      "ru": "Множитель",
+      "en": "Multiplier"
+     },
+     "min": 0,
+     "max": 2,
+     "step": 0.01,
+     "default": 0.7
+    }
+   ],
+   "spec": {
+    "tracks": [
+     {
+      "prop": "volume",
+      "value": "$gain"
+     }
+    ]
+   }
+  },
+  {
+   "id": "voice-clean",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "audioProcess",
+   "filter": "highpass=f=$hp,afftdn=nf=$noise,acompressor=threshold=-20dB:ratio=$ratio:attack=8:release=140,loudnorm=I=$target:TP=$peak:LRA=8",
+   "name": {
+    "ru": "Голос: чистый",
+    "en": "Voice: clean"
+   },
+   "description": {
+    "ru": "Срез низа, шумоподавление, мягкая компрессия и громкость под короткие ролики",
+    "en": "Low cut, noise reduction, soft compression and loudness for short videos"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "track",
+     "label": {
+      "ru": "Дорожка (если клипы не выбраны)",
+      "en": "Track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "slider",
+     "id": "hp",
+     "label": {
+      "ru": "Срез низа",
+      "en": "Low cut"
+     },
+     "min": 40,
+     "max": 200,
+     "step": 5,
+     "default": 80,
+     "unit": "Hz"
+    },
+    {
+     "type": "slider",
+     "id": "noise",
+     "label": {
+      "ru": "Шум тише чем",
+      "en": "Noise below"
+     },
+     "min": -60,
+     "max": -15,
+     "step": 1,
+     "default": -28,
+     "unit": "dB"
+    },
+    {
+     "type": "slider",
+     "id": "ratio",
+     "label": {
+      "ru": "Компрессия",
+      "en": "Compression"
+     },
+     "min": 1,
+     "max": 8,
+     "step": 0.5,
+     "default": 3
+    },
+    {
+     "type": "slider",
+     "id": "target",
+     "label": {
+      "ru": "Громкость",
+      "en": "Loudness"
+     },
+     "min": -24,
+     "max": -10,
+     "step": 0.5,
+     "default": -16,
+     "unit": "LUFS"
+    },
+    {
+     "type": "slider",
+     "id": "peak",
+     "label": {
+      "ru": "Пики не выше",
+      "en": "Peaks below"
+     },
+     "min": -6,
+     "max": 0,
+     "step": 0.5,
+     "default": -2,
+     "unit": "dB"
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.171,
+     0.195,
+     0.315,
+     0.514,
+     0.657,
+     0.895,
+     0.952,
+     0.952,
+     0.948,
+     0.802,
+     0.591,
+     0.431,
+     0.217,
+     0.19,
+     0.14,
+     0.19,
+     0.198,
+     0.412,
+     0.576,
+     0.786,
+     0.94,
+     0.952,
+     0.952,
+     0.902,
+     0.693,
+     0.526,
+     0.334,
+     0.195,
+     0.177,
+     0.167,
+     0.195,
+     0.294,
+     0.497,
+     0.642,
+     0.875,
+     0.951,
+     0.951,
+     0.949,
+     0.827,
+     0.598,
+     0.449,
+     0.234,
+     0.193,
+     0.148,
+     0.186,
+     0.197,
+     0.394,
+     0.568,
+     0.757,
+     0.938,
+     0.952,
+     0.952,
+     0.92,
+     0.708,
+     0.542,
+     0.355,
+     0.196,
+     0.18,
+     0.161,
+     0.195,
+     0.274,
+     0.483,
+     0.617,
+     0.863
+    ],
+    "after": [
+     0.198,
+     0.226,
+     0.24,
+     0.299,
+     0.315,
+     0.35,
+     0.364,
+     0.361,
+     0.359,
+     0.348,
+     0.298,
+     0.287,
+     0.225,
+     0.221,
+     0.203,
+     0.219,
+     0.225,
+     0.273,
+     0.309,
+     0.322,
+     0.359,
+     0.363,
+     0.357,
+     0.359,
+     0.323,
+     0.298,
+     0.262,
+     0.221,
+     0.217,
+     0.19,
+     0.224,
+     0.227,
+     0.295,
+     0.315,
+     0.347,
+     0.364,
+     0.359,
+     0.359,
+     0.345,
+     0.303,
+     0.284,
+     0.235,
+     0.219,
+     0.209,
+     0.214,
+     0.226,
+     0.269,
+     0.309,
+     0.32,
+     0.36,
+     0.364,
+     0.358,
+     0.358,
+     0.334,
+     0.297,
+     0.271,
+     0.216,
+     0.221,
+     0.183,
+     0.225,
+     0.225,
+     0.292,
+     0.313,
+     0.342
+    ]
+   }
+  },
+  {
+   "id": "sound-echo",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "audioProcess",
+   "filter": "aecho=0.8:0.88:$delay:$decay",
+   "name": {
+    "ru": "Звук: эхо",
+    "en": "Sound: echo"
+   },
+   "description": {
+    "ru": "Отзвук в большом помещении",
+    "en": "Reflections of a large room"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "track",
+     "label": {
+      "ru": "Дорожка (если клипы не выбраны)",
+      "en": "Track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "slider",
+     "id": "delay",
+     "label": {
+      "ru": "Задержка",
+      "en": "Delay"
+     },
+     "min": 40,
+     "max": 1000,
+     "step": 10,
+     "default": 180,
+     "unit": "ms"
+    },
+    {
+     "type": "slider",
+     "id": "decay",
+     "label": {
+      "ru": "Затухание",
+      "en": "Decay"
+     },
+     "min": 0.1,
+     "max": 0.9,
+     "step": 0.01,
+     "default": 0.35
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.171,
+     0.195,
+     0.315,
+     0.514,
+     0.657,
+     0.895,
+     0.952,
+     0.952,
+     0.948,
+     0.802,
+     0.591,
+     0.431,
+     0.217,
+     0.19,
+     0.14,
+     0.19,
+     0.198,
+     0.412,
+     0.576,
+     0.786,
+     0.94,
+     0.952,
+     0.952,
+     0.902,
+     0.693,
+     0.526,
+     0.334,
+     0.195,
+     0.177,
+     0.167,
+     0.195,
+     0.294,
+     0.497,
+     0.642,
+     0.875,
+     0.951,
+     0.951,
+     0.949,
+     0.827,
+     0.598,
+     0.449,
+     0.234,
+     0.193,
+     0.148,
+     0.186,
+     0.197,
+     0.394,
+     0.568,
+     0.757,
+     0.938,
+     0.952,
+     0.952,
+     0.92,
+     0.708,
+     0.542,
+     0.355,
+     0.196,
+     0.18,
+     0.161,
+     0.195,
+     0.274,
+     0.483,
+     0.617,
+     0.863
+    ],
+    "after": [
+     0.124,
+     0.138,
+     0.237,
+     0.393,
+     0.478,
+     0.607,
+     0.616,
+     0.55,
+     0.511,
+     0.353,
+     0.264,
+     0.225,
+     0.196,
+     0.177,
+     0.124,
+     0.149,
+     0.248,
+     0.395,
+     0.487,
+     0.615,
+     0.614,
+     0.545,
+     0.502,
+     0.341,
+     0.261,
+     0.224,
+     0.197,
+     0.166,
+     0.128,
+     0.148,
+     0.267,
+     0.402,
+     0.498,
+     0.612,
+     0.613,
+     0.548,
+     0.502,
+     0.32,
+     0.263,
+     0.218,
+     0.198,
+     0.169,
+     0.133,
+     0.149,
+     0.281,
+     0.404,
+     0.506,
+     0.616,
+     0.613,
+     0.54,
+     0.49,
+     0.304,
+     0.26,
+     0.214,
+     0.196,
+     0.158,
+     0.14,
+     0.149,
+     0.286,
+     0.41,
+     0.535,
+     0.566,
+     0.189,
+     0.266
+    ]
+   }
+  },
+  {
+   "id": "audio-muffle",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "audioProcess",
+   "filter": "lowpass=f=$cut,lowpass=f=$cut",
+   "name": {
+    "ru": "Звук: глухо",
+    "en": "Sound: muffled"
+   },
+   "description": {
+    "ru": "«Под воду»: убирает верх. Для части трека сначала разрежь клип",
+    "en": "Underwater: removes highs. For a part of a track, cut the clip first"
+   },
+   "targets": [
+    "audio"
+   ],
+   "controls": [
+    {
+     "type": "track",
+     "id": "track",
+     "label": {
+      "ru": "Дорожка (если клипы не выбраны)",
+      "en": "Track (if no clips are selected)"
+     },
+     "kinds": [
+      "audio"
+     ],
+     "default": "a1"
+    },
+    {
+     "type": "slider",
+     "id": "cut",
+     "label": {
+      "ru": "Верх до",
+      "en": "Highs up to"
+     },
+     "min": 200,
+     "max": 4000,
+     "step": 50,
+     "default": 700,
+     "unit": "Hz"
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.171,
+     0.195,
+     0.315,
+     0.514,
+     0.657,
+     0.895,
+     0.952,
+     0.952,
+     0.948,
+     0.802,
+     0.591,
+     0.431,
+     0.217,
+     0.19,
+     0.14,
+     0.19,
+     0.198,
+     0.412,
+     0.576,
+     0.786,
+     0.94,
+     0.952,
+     0.952,
+     0.902,
+     0.693,
+     0.526,
+     0.334,
+     0.195,
+     0.177,
+     0.167,
+     0.195,
+     0.294,
+     0.497,
+     0.642,
+     0.875,
+     0.951,
+     0.951,
+     0.949,
+     0.827,
+     0.598,
+     0.449,
+     0.234,
+     0.193,
+     0.148,
+     0.186,
+     0.197,
+     0.394,
+     0.568,
+     0.757,
+     0.938,
+     0.952,
+     0.952,
+     0.92,
+     0.708,
+     0.542,
+     0.355,
+     0.196,
+     0.18,
+     0.161,
+     0.195,
+     0.274,
+     0.483,
+     0.617,
+     0.863
+    ],
+    "after": [
+     0.079,
+     0.13,
+     0.246,
+     0.429,
+     0.628,
+     0.803,
+     0.89,
+     0.896,
+     0.862,
+     0.738,
+     0.54,
+     0.347,
+     0.186,
+     0.101,
+     0.073,
+     0.095,
+     0.173,
+     0.325,
+     0.518,
+     0.717,
+     0.854,
+     0.896,
+     0.892,
+     0.819,
+     0.65,
+     0.453,
+     0.263,
+     0.141,
+     0.081,
+     0.078,
+     0.121,
+     0.235,
+     0.407,
+     0.614,
+     0.788,
+     0.887,
+     0.896,
+     0.873,
+     0.747,
+     0.564,
+     0.358,
+     0.201,
+     0.104,
+     0.074,
+     0.09,
+     0.165,
+     0.305,
+     0.503,
+     0.698,
+     0.847,
+     0.896,
+     0.895,
+     0.825,
+     0.672,
+     0.465,
+     0.283,
+     0.146,
+     0.086,
+     0.075,
+     0.116,
+     0.219,
+     0.393,
+     0.592,
+     0.777
+    ]
+   }
+  },
+  {
+   "id": "blur-background",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "blurBackground",
+   "name": {
+    "ru": "Размытый фон",
+    "en": "Blurred background"
+   },
+   "description": {
+    "ru": "Размытый дубль футажа под клипом заполняет пустые края",
+    "en": "A blurred copy of the footage under the clip fills the empty edges"
+   },
+   "targets": [
+    "video",
+    "sequence"
+   ],
+   "controls": [
+    {
+     "type": "slider",
+     "id": "blur",
+     "label": {
+      "ru": "Размытие",
+      "en": "Blur"
+     },
+     "min": 0,
+     "max": 100,
+     "step": 1,
+     "default": 40,
+     "unit": "px"
+    },
+    {
+     "type": "slider",
+     "id": "scale",
+     "label": {
+      "ru": "Масштаб",
+      "en": "Scale"
+     },
+     "min": 1,
+     "max": 3,
+     "step": 0.01,
+     "default": 1.3
+    }
+   ]
+  },
+  {
+   "id": "audio-compressor",
+   "kind": "tool",
+   "author": "studio",
+   "engine": "builtin",
+   "builtin": "audioProcess",
+   "name": {
+    "ru": "Звук: компрессор",
+    "en": "Sound: compressor"
+   },
+   "description": {
+    "ru": "Сближает тихое и громкое: речь и музыка звучат ровнее и плотнее",
+    "en": "Brings quiet and loud closer: speech and music sound even and dense"
+   },
+   "targets": [
+    "audio"
+   ],
+   "filter": "acompressor=threshold=$threshold:ratio=$ratio:attack=$attack:release=$release:makeup=$makeup",
+   "controls": [
+    {
+     "type": "slider",
+     "id": "threshold",
+     "label": {
+      "ru": "Порог (меньше — сильнее)",
+      "en": "Threshold (lower is stronger)"
+     },
+     "min": 0.02,
+     "max": 1,
+     "step": 0.01,
+     "default": 0.12
+    },
+    {
+     "type": "slider",
+     "id": "ratio",
+     "label": {
+      "ru": "Степень сжатия",
+      "en": "Ratio"
+     },
+     "min": 1,
+     "max": 20,
+     "step": 0.5,
+     "default": 4
+    },
+    {
+     "type": "slider",
+     "id": "attack",
+     "label": {
+      "ru": "Атака",
+      "en": "Attack"
+     },
+     "min": 1,
+     "max": 200,
+     "step": 1,
+     "unit": "ms",
+     "default": 15
+    },
+    {
+     "type": "slider",
+     "id": "release",
+     "label": {
+      "ru": "Спад",
+      "en": "Release"
+     },
+     "min": 20,
+     "max": 1000,
+     "step": 10,
+     "unit": "ms",
+     "default": 180
+    },
+    {
+     "type": "slider",
+     "id": "makeup",
+     "label": {
+      "ru": "Подъем громкости",
+      "en": "Makeup gain"
+     },
+     "min": 1,
+     "max": 8,
+     "step": 0.1,
+     "default": 2
+    }
+   ],
+   "preview": {
+    "type": "wave",
+    "before": [
+     0.171,
+     0.195,
+     0.315,
+     0.514,
+     0.657,
+     0.895,
+     0.952,
+     0.952,
+     0.948,
+     0.802,
+     0.591,
+     0.431,
+     0.217,
+     0.19,
+     0.14,
+     0.19,
+     0.198,
+     0.412,
+     0.576,
+     0.786,
+     0.94,
+     0.952,
+     0.952,
+     0.902,
+     0.693,
+     0.526,
+     0.334,
+     0.195,
+     0.177,
+     0.167,
+     0.195,
+     0.294,
+     0.497,
+     0.642,
+     0.875,
+     0.951,
+     0.951,
+     0.949,
+     0.827,
+     0.598,
+     0.449,
+     0.234,
+     0.193,
+     0.148,
+     0.186,
+     0.197,
+     0.394,
+     0.568,
+     0.757,
+     0.938,
+     0.952,
+     0.952,
+     0.92,
+     0.708,
+     0.542,
+     0.355,
+     0.196,
+     0.18,
+     0.161,
+     0.195,
+     0.274,
+     0.483,
+     0.617,
+     0.863
+    ],
+    "after": [
+     0.308,
+     0.323,
+     0.393,
+     0.429,
+     0.428,
+     0.467,
+     0.466,
+     0.453,
+     0.452,
+     0.417,
+     0.38,
+     0.349,
+     0.295,
+     0.303,
+     0.257,
+     0.322,
+     0.323,
+     0.42,
+     0.429,
+     0.453,
+     0.468,
+     0.462,
+     0.452,
+     0.443,
+     0.39,
+     0.374,
+     0.313,
+     0.303,
+     0.294,
+     0.305,
+     0.323,
+     0.391,
+     0.426,
+     0.43,
+     0.463,
+     0.468,
+     0.45,
+     0.453,
+     0.425,
+     0.38,
+     0.357,
+     0.293,
+     0.303,
+     0.26,
+     0.32,
+     0.323,
+     0.413,
+     0.429,
+     0.442,
+     0.467,
+     0.463,
+     0.452,
+     0.446,
+     0.393,
+     0.378,
+     0.321,
+     0.303,
+     0.296,
+     0.297,
+     0.322,
+     0.378,
+     0.428,
+     0.429,
+     0.465
+    ]
+   }
+  }
+ ],
+ "packVersion": 4
+}

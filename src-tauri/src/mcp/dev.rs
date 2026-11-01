@@ -19,6 +19,7 @@ pub fn list() -> Value {
         { "name": "dev_chat_wait", "description": "Wait until the studio Claude finishes its reply (default up to 180 s) and return the turn: assistant text, tool calls, totals.", "inputSchema": { "type": "object", "properties": { "timeout_s": { "type": "integer" } } } },
         { "name": "dev_screenshot", "description": "Capture the studio window (works when covered, does not take focus). Returns a PNG path.", "inputSchema": { "type": "object", "properties": {} } },
         { "name": "dev_ui_errors", "description": "Recent UI and core errors (newest first).", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer" } } } },
+        { "name": "dev_eval", "description": "Run JavaScript in the studio window (click a button to check a flow as the user would). No result is returned: look with dev_screenshot.", "inputSchema": { "type": "object", "properties": { "js": { "type": "string" } }, "required": ["js"] } },
         { "name": "dev_tab", "description": "Switch the open tab: home|projects|library|prepare|edit|export.", "inputSchema": { "type": "object", "properties": { "tab": { "type": "string" } }, "required": ["tab"] } },
     ])
 }
@@ -74,6 +75,11 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Result<String, String>
             let limit = args["limit"].as_u64().unwrap_or(20) as usize;
             let list = crate::error::errors_recent();
             Ok(if list.is_empty() { "no errors".into() } else { list.iter().take(limit).map(|e| format!("{} {}: {}", e.at, e.code, e.message)).collect::<Vec<_>>().join("\n---\n") })
+        }
+        "dev_eval" => {
+            let js = args["js"].as_str().ok_or("js required")?;
+            app.get_webview_window("main").ok_or("no main window")?.eval(js).map_err(|e| e.to_string())?;
+            Ok("ok".into())
         }
         "dev_tab" => {
             let tab = args["tab"].as_str().ok_or("tab required")?;

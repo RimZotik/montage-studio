@@ -50,13 +50,13 @@ struct ProbeCache {
 }
 
 #[cfg(windows)]
-fn quiet(command: &mut Command) -> &mut Command {
+pub fn quiet(command: &mut Command) -> &mut Command {
     use std::os::windows::process::CommandExt;
     command.creation_flags(0x0800_0000)
 }
 
 #[cfg(not(windows))]
-fn quiet(command: &mut Command) -> &mut Command {
+pub fn quiet(command: &mut Command) -> &mut Command {
     command
 }
 
@@ -120,7 +120,7 @@ fn waveform(ffmpeg: &Path, file: &Path, out: &Path) -> bool {
         && out.is_file()
 }
 
-fn key(rel: &str, meta: &std::fs::Metadata) -> String {
+pub fn key(rel: &str, meta: &std::fs::Metadata) -> String {
     let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
     format!("{rel}|{}|{mtime}", meta.len())
 }

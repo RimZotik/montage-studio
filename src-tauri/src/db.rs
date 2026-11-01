@@ -46,6 +46,12 @@ const MIGRATIONS: &[&str] = &[
         duration_ms integer not null
     );
     create index claude_turns_project on claude_turns (project, at);",
+    // 3: сколько раз использован элемент библиотеки.
+    "create table library_usage (
+        item text primary key,
+        uses integer not null,
+        last_used integer not null
+    );",
 ];
 
 pub struct Db(Mutex<Connection>);

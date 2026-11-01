@@ -52,6 +52,8 @@ struct Session {
 pub struct ChatState {
     session: Mutex<Option<Session>>,
     busy: Arc<std::sync::atomic::AtomicBool>,
+    /// Какой список библиотеки Claude уже видел в этом процессе (хэш).
+    library_seen: std::sync::atomic::AtomicU64,
 }
 
 fn now() -> i64 {
@@ -247,9 +249,11 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
             kill(&mut old);
         }
         *guard = Some(spawn(app, &dir, &system_path, hash, Arc::clone(&chat.busy))?);
+        chat.library_seen.store(0, std::sync::atomic::Ordering::SeqCst);
     }
     let session = guard.as_mut().ok_or_else(|| AppError::new("internal", "no session"))?;
-    let content = format!("{}{}", prompt::turn_context(&doc), text);
+    let library = prompt::library_block(app, &chat.library_seen);
+    let content = format!("{}{library}{}", prompt::turn_context(&doc), text);
     let line = serde_json::json!({ "type": "user", "message": { "role": "user", "content": content } });
     writeln!(session.stdin, "{line}").and_then(|()| session.stdin.flush()).map_err(|e| AppError::new("claudeStart", e.to_string()))?;
     chat.busy.store(true, std::sync::atomic::Ordering::SeqCst);

@@ -25,6 +25,9 @@ pub struct Track {
     pub muted: bool,
     #[serde(default)]
     pub locked: bool,
+    /// Громкость всей дорожки 0–2.
+    #[serde(default = "one")]
+    pub volume: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -60,6 +63,77 @@ pub struct ClipProps {
     pub fade_in: u32,
     #[serde(default)]
     pub fade_out: u32,
+    /// Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
+    /// Кадры файла, а не клипа: разрез и перенос ее не сбивают.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub volume_keys: Vec<(u32, f64)>,
+}
+
+/// Изменить часть свойств: незаданные остаются как были.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipPropsPatch {
+    pub volume: Option<f64>,
+    pub opacity: Option<f64>,
+    pub scale: Option<f64>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub fade_in: Option<u32>,
+    pub fade_out: Option<u32>,
+    pub volume_keys: Option<Vec<(u32, f64)>>,
+}
+
+impl ClipProps {
+    fn merge(&mut self, p: &ClipPropsPatch) {
+        self.volume = p.volume.unwrap_or(self.volume);
+        self.opacity = p.opacity.unwrap_or(self.opacity);
+        self.scale = p.scale.unwrap_or(self.scale);
+        self.x = p.x.unwrap_or(self.x);
+        self.y = p.y.unwrap_or(self.y);
+        self.fade_in = p.fade_in.unwrap_or(self.fade_in);
+        self.fade_out = p.fade_out.unwrap_or(self.fade_out);
+        if let Some(k) = &p.volume_keys {
+            self.volume_keys.clone_from(k);
+        }
+    }
+}
+
+/// Эффект на клипе: копия из библиотеки вместе со значениями и панелью управления. Проект не
+/// зависит от библиотеки, а панель и анимацию можно поменять только у этого клипа.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppliedEffect {
+    /// ID на клипе (`fx1`); присваивает ядро.
+    #[serde(default)]
+    pub id: String,
+    /// ID в библиотеке.
+    pub effect: String,
+    #[specta(type = specta_typescript::Any)]
+    pub name: serde_json::Value,
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    #[serde(default)]
+    #[specta(type = specta_typescript::Any)]
+    pub params: serde_json::Value,
+    #[serde(default)]
+    #[specta(type = specta_typescript::Any)]
+    pub controls: serde_json::Value,
+    #[serde(default)]
+    #[specta(type = specta_typescript::Any)]
+    pub spec: serde_json::Value,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Анимации от края клипа не повторяются на стыке после разреза.
+fn drop_anchor(effects: &mut [AppliedEffect], anchor: &str) {
+    for fx in effects {
+        if let Some(tracks) = fx.spec.get_mut("tracks").and_then(serde_json::Value::as_array_mut) {
+            tracks.retain(|t| t["anchor"] != anchor);
+        }
+    }
 }
 
 fn one() -> f64 {
@@ -68,7 +142,7 @@ fn one() -> f64 {
 
 impl Default for ClipProps {
     fn default() -> Self {
-        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0 }
+        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0, volume_keys: vec![] }
     }
 }
 
@@ -97,6 +171,9 @@ pub struct Clip {
     pub link: Option<String>,
     #[serde(default)]
     pub props: ClipProps,
+    /// Эффекты по порядку наложения.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<AppliedEffect>,
 }
 
 impl Clip {
@@ -127,16 +204,44 @@ pub enum Op {
     SplitClip { id: String, at: u32 },
     /// Удалить клипы; `ripple` — сдвинуть следующие клипы тех же дорожек влево на освободившееся.
     DeleteClips { ids: Vec<String>, ripple: bool },
-    SetProps { id: String, props: ClipProps },
+    /// Изменить свойства: незаданные остаются как были.
+    SetProps { id: String, props: ClipPropsPatch },
     SetText { id: String, text: String },
-    SetTrack { id: String, muted: Option<bool>, locked: Option<bool> },
+    SetTrack {
+        id: String,
+        #[serde(default)]
+        muted: Option<bool>,
+        #[serde(default)]
+        locked: Option<bool>,
+        #[serde(default)]
+        volume: Option<f64>,
+    },
+    /// Наложить эффект на клип.
+    AddEffect { clip: String, effect: AppliedEffect },
+    /// Изменить эффект на клипе: значения (добавляются к прежним), вкл/выкл, панель, анимацию.
+    SetEffect {
+        clip: String,
+        fx: String,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        params: Option<serde_json::Value>,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        controls: Option<serde_json::Value>,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        spec: Option<serde_json::Value>,
+    },
+    RemoveEffect { clip: String, fx: String },
     AddMarker { frame: u32, label: String },
     RemoveMarker { frame: u32 },
 }
 
 /// Стандартные дорожки нового проекта: две видео, субтитры, голос, музыка, звуки.
 pub fn default_tracks() -> Vec<Track> {
-    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false };
+    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false, volume: 1.0 };
     vec![t("v2", TrackKind::Video, "V2"), t("v1", TrackKind::Video, "V1"), t("s1", TrackKind::Captions, "S1"), t("a1", TrackKind::Audio, "A1"), t("a2", TrackKind::Audio, "A2"), t("a3", TrackKind::Audio, "A3")]
 }
 
@@ -196,7 +301,7 @@ impl Edit<'_> {
             Op::AddClip { track, kind, src, text, start, duration, offset } => {
                 self.unlocked(track)?;
                 let id = next_id(self.clips);
-                self.clips.push(Clip { id: id.clone(), track: track.clone(), kind: *kind, src: src.clone(), text: text.clone(), start: *start, duration: *duration, offset: offset.unwrap_or(0), link: None, props: ClipProps::default() });
+                self.clips.push(Clip { id: id.clone(), track: track.clone(), kind: *kind, src: src.clone(), text: text.clone(), start: *start, duration: *duration, offset: offset.unwrap_or(0), link: None, props: ClipProps::default(), effects: vec![] });
                 Ok(vec![id])
             }
             Op::AddLinked { video_track, audio_track, src, start, duration, offset } => {
@@ -204,7 +309,7 @@ impl Edit<'_> {
                 self.unlocked(audio_track)?;
                 let v = next_id(self.clips);
                 let link = format!("l{}", v.trim_start_matches('c'));
-                let base = Clip { id: v.clone(), track: video_track.clone(), kind: ClipKind::Media, src: Some(src.clone()), text: None, start: *start, duration: *duration, offset: offset.unwrap_or(0), link: Some(link), props: ClipProps::default() };
+                let base = Clip { id: v.clone(), track: video_track.clone(), kind: ClipKind::Media, src: Some(src.clone()), text: None, start: *start, duration: *duration, offset: offset.unwrap_or(0), link: Some(link), props: ClipProps::default(), effects: vec![] };
                 self.clips.push(base.clone());
                 let a = next_id(self.clips);
                 self.clips.push(Clip { id: a.clone(), track: audio_track.clone(), ..base });
@@ -270,12 +375,14 @@ impl Edit<'_> {
                         right.offset = c.offset + left;
                     }
                     right.props.fade_in = 0;
+                    drop_anchor(&mut right.effects, "start");
                     if c.link.is_some() {
                         right.link = Some(right_link.clone());
                     }
                     let first = self.clip_mut(g)?;
                     first.duration = left;
                     first.props.fade_out = 0;
+                    drop_anchor(&mut first.effects, "end");
                     created.push(right.id.clone());
                     self.clips.push(right);
                 }
@@ -309,14 +416,14 @@ impl Edit<'_> {
                 Ok(vec![])
             }
             Op::SetProps { id, props } => {
-                self.clip_mut(id)?.props = props.clone();
+                self.clip_mut(id)?.props.merge(props);
                 Ok(vec![])
             }
             Op::SetText { id, text } => {
                 self.clip_mut(id)?.text = Some(text.clone());
                 Ok(vec![])
             }
-            Op::SetTrack { id, muted, locked } => {
+            Op::SetTrack { id, muted, locked, volume } => {
                 let t = self.tracks.iter_mut().find(|t| &t.id == id).ok_or_else(|| bad(format!("track {id} not found")))?;
                 if let Some(m) = muted {
                     t.muted = *m;
@@ -324,6 +431,42 @@ impl Edit<'_> {
                 if let Some(l) = locked {
                     t.locked = *l;
                 }
+                if let Some(v) = volume {
+                    t.volume = *v;
+                }
+                Ok(vec![])
+            }
+            Op::AddEffect { clip, effect } => {
+                let c = self.clip_mut(clip)?;
+                let free = (1..).find(|n| !c.effects.iter().any(|f| f.id == format!("fx{n}"))).unwrap_or(1);
+                let id = format!("fx{free}");
+                c.effects.push(AppliedEffect { id: id.clone(), ..effect.clone() });
+                Ok(vec![id])
+            }
+            Op::SetEffect { clip, fx, params, enabled, controls, spec } => {
+                let c = self.clip_mut(clip)?;
+                let f = c.effects.iter_mut().find(|f| &f.id == fx).ok_or_else(|| bad(format!("effect {fx} not on clip {clip}")))?;
+                if let Some(p) = params.as_ref().and_then(serde_json::Value::as_object) {
+                    if !f.params.is_object() {
+                        f.params = serde_json::json!({});
+                    }
+                    if let Some(all) = f.params.as_object_mut() {
+                        all.extend(p.iter().map(|(k, v)| (k.clone(), v.clone())));
+                    }
+                }
+                if let Some(e) = enabled {
+                    f.enabled = *e;
+                }
+                if let Some(x) = controls {
+                    f.controls.clone_from(x);
+                }
+                if let Some(x) = spec {
+                    f.spec.clone_from(x);
+                }
+                Ok(vec![])
+            }
+            Op::RemoveEffect { clip, fx } => {
+                self.clip_mut(clip)?.effects.retain(|f| &f.id != fx);
                 Ok(vec![])
             }
             Op::AddMarker { frame, label } => {
@@ -360,6 +503,16 @@ pub fn validate(tracks: &[Track], clips: &[Clip]) -> AppResult<()> {
         if !(0.0..=2.0).contains(&p.volume) || !(0.0..=1.0).contains(&p.opacity) || !(0.01..=20.0).contains(&p.scale) {
             return Err(bad(format!("clip {} props out of range", c.id)));
         }
+        if p.volume_keys.iter().any(|k| !(0.0..=2.0).contains(&k.1)) || p.volume_keys.windows(2).any(|w| w[0].0 >= w[1].0) {
+            return Err(bad(format!("clip {} volume keys", c.id)));
+        }
+        for fx in &c.effects {
+            crate::library::validate_controls(&if fx.controls.is_null() { serde_json::json!([]) } else { fx.controls.clone() })?;
+            crate::library::validate_spec(&fx.spec, &fx.controls)?;
+        }
+    }
+    if tracks.iter().any(|t| !(0.0..=2.0).contains(&t.volume)) {
+        return Err(bad("track volume out of range"));
     }
     Ok(())
 }
@@ -406,7 +559,7 @@ mod tests {
 
     #[test]
     fn locked_track_and_bad_split() {
-        assert_eq!(run(&[Op::SetTrack { id: "v1".into(), muted: None, locked: Some(true) }, media("v1", 0, 10)]).2.unwrap_err().code, "trackLocked");
+        assert_eq!(run(&[Op::SetTrack { id: "v1".into(), muted: None, locked: Some(true), volume: None }, media("v1", 0, 10)]).2.unwrap_err().code, "trackLocked");
         assert_eq!(run(&[media("v1", 0, 10), Op::SplitClip { id: "c1".into(), at: 10 }]).2.unwrap_err().code, "invalidEdit");
     }
 
@@ -431,6 +584,41 @@ mod tests {
         let (_, clips, r) = run(&[media("v1", 0, 60), media("v1", 100, 60), Op::MoveClip { id: "c1".into(), track: None, start: 120 }]);
         r.unwrap();
         assert_eq!(clips.last().unwrap().id, "c1", "перенесенный — сверху");
+    }
+
+    #[test]
+    fn partial_props_keep_the_rest() {
+        let keys = vec![(10, 0.5), (20, 1.0)];
+        let (_, clips, r) = run(&[media("a1", 0, 60), Op::SetProps { id: "c1".into(), props: ClipPropsPatch { scale: Some(2.0), volume_keys: Some(keys.clone()), ..Default::default() } }, Op::SetProps { id: "c1".into(), props: ClipPropsPatch { volume: Some(0.5), ..Default::default() } }]);
+        r.unwrap();
+        let p = &clips[0].props;
+        assert_eq!((p.volume, p.scale, p.volume_keys.clone()), (0.5, 2.0, keys));
+        let (_, _, bad_keys) = run(&[media("a1", 0, 60), Op::SetProps { id: "c1".into(), props: ClipPropsPatch { volume_keys: Some(vec![(20, 1.0), (10, 0.5)]), ..Default::default() } }]);
+        assert!(bad_keys.is_err(), "ключи по возрастанию");
+    }
+
+    #[test]
+    fn effects_on_clip_and_split() {
+        let spec = serde_json::json!({ "tracks": [{ "prop": "opacity", "anchor": "start", "keys": [[0, 0], ["$d", 1]] }, { "prop": "opacity", "anchor": "end", "keys": [[-1, 1], [0, 0]] }, { "prop": "blur", "value": "$d" }] });
+        let controls = serde_json::json!([{ "type": "slider", "id": "d", "min": 0, "max": 5, "default": 1 }]);
+        let fx = AppliedEffect { id: String::new(), effect: "t".into(), name: serde_json::json!("Т"), enabled: true, params: serde_json::json!({ "d": 1 }), controls, spec };
+        let (_, clips, r) = run(&[
+            media("v1", 0, 60),
+            Op::AddEffect { clip: "c1".into(), effect: fx.clone() },
+            Op::AddEffect { clip: "c1".into(), effect: fx.clone() },
+            Op::SetEffect { clip: "c1".into(), fx: "fx2".into(), params: Some(serde_json::json!({ "d": 3 })), enabled: Some(false), controls: None, spec: None },
+            Op::RemoveEffect { clip: "c1".into(), fx: "fx1".into() },
+            Op::SplitClip { id: "c1".into(), at: 30 },
+        ]);
+        r.unwrap();
+        let left = clips.iter().find(|c| c.id == "c1").unwrap();
+        let right = clips.iter().find(|c| c.id != "c1").unwrap();
+        assert_eq!((left.effects[0].id.as_str(), left.effects[0].params["d"].as_i64(), left.effects[0].enabled), ("fx2", Some(3), false));
+        let anchors = |c: &Clip| c.effects[0].spec["tracks"].as_array().unwrap().iter().map(|t| t["anchor"].as_str().unwrap_or("none").to_owned()).collect::<Vec<_>>();
+        assert_eq!(anchors(left), ["start", "none"], "конец у левой части не играет");
+        assert_eq!(anchors(right), ["end", "none"], "начало у правой части не играет");
+        let (_, _, refused) = run(&[media("v1", 0, 60), Op::AddEffect { clip: "c1".into(), effect: AppliedEffect { controls: serde_json::json!([]), ..fx } }]);
+        assert!(refused.is_err(), "ссылка на несуществующий элемент панели");
     }
 
     #[test]

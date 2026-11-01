@@ -1,19 +1,24 @@
 //! Ядро Montage Studio: команды для интерфейса, SQLite, проверки системы, проекты, лимиты Claude.
 //! Устройство — `docs/architecture.md`.
 
+mod audio;
 mod chat;
 mod checks;
 mod claude_limits;
 mod components;
 mod db;
 mod error;
+mod export;
 mod ipc;
+mod library;
 mod mcp;
 mod media;
+mod presets;
 mod project;
 mod projects;
 mod rules;
 mod settings;
+mod speech;
 mod updates;
 
 use std::sync::Arc;
@@ -36,8 +41,8 @@ fn logging() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .target(file("app"))
         .target(file("errors").filter(|m| m.level() <= log::Level::Warn))
         .target(group("claude", &["::chat", "claude_limits"]))
-        .target(group("media", &["::media", "::project", "::projects", "::rules"]))
-        .target(group("system", &["::checks", "::components", "::updates"]))
+        .target(group("media", &["::media", "::project", "::projects", "::rules", "::speech", "::audio", "::library", "::presets"]))
+        .target(group("system", &["::checks", "::components", "::updates", "::export"]))
         .build()
 }
 
@@ -91,6 +96,8 @@ pub fn run() {
         .manage(project::ProjectState::default())
         .manage(chat::ChatState::default())
         .manage(media::MediaJobs::default())
+        .manage(speech::SpeechJobs::default())
+        .manage(export::ExportState::default())
         .manage(mcp::McpState::default())
         .manage(Arc::new(updates::UpdateState::default()))
         .setup(move |app| {
@@ -103,6 +110,10 @@ pub fn run() {
             app.manage(db::Db::open(&config.join("studio.db")).map_err(|e| e.message)?);
             log::info!("Montage Studio {} started; config={}", app.package_info().version, config.display());
             show_main(app.handle());
+            // Библиотека: главный и базовый паки на месте с первого запуска.
+            if let Err(e) = library::root_of(app.handle()).and_then(|root| library::init(&root)) {
+                log::warn!("library init: {}", e.message);
+            }
             updates::start(app.handle());
             // MCP-сервер студии для Claude (адрес и ключ — в mcp.json чата проекта).
             let info = mcp::start_app(app.handle());

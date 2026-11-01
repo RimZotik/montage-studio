@@ -8,6 +8,7 @@ import { typingTarget } from "@/app/commands";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { MediaColumn } from "@/pages/Project/MediaColumn";
 import { useDragMedia } from "./dragMedia";
+import { EffectsColumn } from "./EffectsColumn";
 import { Inspector } from "./Inspector";
 import { Monitor } from "./Monitor";
 import { Timeline } from "./Timeline";
@@ -26,6 +27,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   const [zoom, setZoom] = useState(2);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [w, setW] = useWidths("edit", WIDTHS);
+  const [left, setLeft] = useState<"media" | "effects">("media");
   const drag = useDragMedia();
 
   const total = useMemo(() => Math.max(fps * 5, ...view.clips.map((c) => c.start + c.duration)), [view.clips, fps]);
@@ -149,7 +151,16 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   return (
     <div className="editpage">
       <div className="edtop">
-        <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={() => {}} onError={onError} onImport={onImport} style={{ width: w.media }} compact />
+        <div className="leftcol" style={{ width: w.media }}>
+          <div className="lefttabs">
+            {(["media", "effects"] as const).map((k) => (
+              <button key={k} className={left === k ? "on" : ""} onClick={() => setLeft(k)}>
+                {t(`edit.left.${k}`)}
+              </button>
+            ))}
+          </div>
+          {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={() => {}} onError={onError} onImport={onImport} style={{ flex: 1, minHeight: 0 }} compact /> : <EffectsColumn view={view} selected={selected} onError={onError} style={{ flex: 1, minHeight: 0 }} />}
+        </div>
         <Splitter width={w.media} min={200} max={480} side="left" onChange={(v) => setW("media", v)} onReset={() => setW("media", WIDTHS.media)} />
         <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} />
         <Splitter width={w.inspector} min={240} max={480} side="right" onChange={(v) => setW("inspector", v)} onReset={() => setW("inspector", WIDTHS.inspector)} />

@@ -1,5 +1,6 @@
-import { AbsoluteFill, Html5Audio, Html5Video, Img, Sequence, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Html5Audio, Html5Video, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useRemotionEnvironment, useVideoConfig } from "remotion";
 import type { Clip, Sequence as Seq, Track } from "@/shared/ipc/bindings";
+import { effectsAt, volumeAt } from "./effects";
 
 // Композиция «таймлайн» (docs/architecture.md): из данных проекта собирается кадр — тот же код
 // играет в предпросмотре (Remotion Player) и позже рендерит видео, поэтому картинка совпадает.
@@ -17,7 +18,7 @@ const IMAGE = /\.(png|jpe?g|webp|gif|svg|bmp)$/i;
 /** Свойства клипа со значениями по умолчанию (в файле поля могут отсутствовать). */
 export function propsOf(clip: Clip) {
   const p = clip.props;
-  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0 };
+  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0, volumeKeys: p?.volumeKeys ?? [] };
 }
 
 /** Плавное появление и исчезновение (0–1) по кадру внутри клипа. */
@@ -27,6 +28,13 @@ function fade(frame: number, clip: Clip): number {
   if (fadeIn > 0) k = Math.min(k, interpolate(frame, [0, fadeIn], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }));
   if (fadeOut > 0) k = Math.min(k, interpolate(frame, [clip.duration - fadeOut, clip.duration], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }));
   return k;
+}
+
+/** Громкость части в кадре `abs` таймлайна: свойство, плавность, огибающая (в кадрах файла),
+ *  эффекты, дорожка. */
+function loudnessAt(q: Clip, abs: number, fps: number, trackVolume: number): number {
+  const inClip = abs - q.start;
+  return propsOf(q).volume * fade(inClip, q) * volumeAt(propsOf(q).volumeKeys as [number, number][], (q.offset ?? 0) + inClip) * effectsAt(q.effects, inClip, q.duration, fps).volume * trackVolume;
 }
 
 /** Непрерывный кусок одного файла: части встык, продолжающие друг друга в файле (после
@@ -61,24 +69,28 @@ function covered(abs: number, run: Run, same: Run[]): boolean {
   return same.some((h) => h.z > run.z && abs >= h.start && abs < h.start + h.duration);
 }
 
-function VisualRun({ run, srcOf, muted }: { run: Run; srcOf: (p: string) => string; muted: boolean }) {
+function VisualRun({ run, srcOf, muted, trackVolume }: { run: Run; srcOf: (p: string) => string; muted: boolean; trackVolume: number }) {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const part = partAt(run, frame);
   const p = propsOf(part);
-  const style = { opacity: p.opacity * fade(run.start + frame - part.start, part), transform: `translate(${p.x}px, ${p.y}px) scale(${p.scale})` };
+  const inClip = run.start + frame - part.start;
+  const fx = effectsAt(part.effects, inClip, part.duration, fps);
+  const style = { opacity: p.opacity * fx.opacity * fade(inClip, part), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined };
   const src = srcOf(run.src);
+  // При рендере кадр берется точно из файла; в мониторе — обычное видео браузера, без пауз.
+  const Clip = useRemotionEnvironment().isRendering ? OffthreadVideo : Html5Video;
   return (
     <AbsoluteFill style={style}>
       {IMAGE.test(run.src) ? (
         <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       ) : (
-        <Html5Video
+        <Clip
           src={src}
           trimBefore={run.offset}
           volume={(f: number) => {
             if (muted) return 0;
-            const q = partAt(run, f);
-            return propsOf(q).volume * fade(run.start + f - q.start, q);
+            return loudnessAt(partAt(run, f), run.start + f, fps, trackVolume);
           }}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
@@ -89,16 +101,22 @@ function VisualRun({ run, srcOf, muted }: { run: Run; srcOf: (p: string) => stri
 
 function SolidClip({ clip }: { clip: Clip }) {
   const frame = useCurrentFrame();
-  return <AbsoluteFill style={{ background: clip.text ?? "#000000", opacity: propsOf(clip).opacity * fade(frame, clip) }} />;
+  const { fps } = useVideoConfig();
+  const p = propsOf(clip);
+  const fx = effectsAt(clip.effects, frame, clip.duration, fps);
+  return <AbsoluteFill style={{ background: clip.text ?? "#000000", opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }} />;
 }
 
 /** Субтитр: нижняя треть по умолчанию; `props.y` сдвигает (минус — вверх), `scale` — размер. */
 function CaptionClip({ clip }: { clip: Clip }) {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const p = propsOf(clip);
+  const fx = effectsAt(clip.effects, frame, clip.duration, fps);
+  const plate = fx.background && !/^#[0-9a-f]{6}00$/i.test(fx.background) ? fx.background : undefined;
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fade(frame, clip), transform: `translate(${p.x}px, ${p.y}px) scale(${p.scale})` }}>
-      <div style={{ fontFamily: "Geist Sans, system-ui, sans-serif", fontWeight: 700, fontSize: 64, color: "#fff", textAlign: "center", lineHeight: 1.1, padding: "0 8%", textShadow: "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: "2px #000" }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }}>
+      <div style={{ fontFamily: "Geist Sans, system-ui, sans-serif", fontWeight: 700, fontSize: 64, color: fx.color ?? "#fff", textAlign: "center", lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate ? undefined : "2px #000" }}>
         {clip.text}
       </div>
     </AbsoluteFill>
@@ -106,6 +124,7 @@ function CaptionClip({ clip }: { clip: Clip }) {
 }
 
 export function TimelineComposition({ sequence, tracks, clips, srcOf }: CompositionProps) {
+  const { fps } = useVideoConfig();
   const runs = runsOf(clips);
   const z = new Map(clips.map((c, i) => [c.id, i]));
   // Следующий кусок подгружается заранее, чтобы на стыке не было паузы.
@@ -113,8 +132,10 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
   const audioOn = new Set(tracks.filter((t) => t.kind === "audio" && !t.muted).map((t) => t.id));
   // Связки, у которых есть звук на включенной звуковой дорожке: картинка играет без звука.
   const soundLinks = new Set(clips.filter((c) => c.link && audioOn.has(c.track)).map((c) => c.link));
-  // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх; внутри дорожки — по z.
-  const visual = [...tracks].reverse().filter((t) => t.kind !== "audio" && !t.muted);
+  // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх; субтитры всегда поверх видео;
+  // внутри дорожки — по z.
+  const shown = [...tracks].reverse().filter((t) => !t.muted);
+  const visual = [...shown.filter((t) => t.kind === "video"), ...shown.filter((t) => t.kind === "captions")];
   return (
     <AbsoluteFill style={{ background: sequence.background ?? "#000000" }}>
       {visual.map((t) => {
@@ -125,7 +146,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
               z: r.z,
               el: (
                 <Sequence key={r.id} from={r.start} durationInFrames={r.duration} premountFor={premount}>
-                  <VisualRun run={r} srcOf={srcOf} muted={r.parts.some((p) => !!p.link && soundLinks.has(p.link))} />
+                  <VisualRun run={r} srcOf={srcOf} trackVolume={t.volume ?? 1} muted={r.parts.some((p) => !!p.link && soundLinks.has(p.link))} />
                 </Sequence>
               ),
             })),
@@ -154,8 +175,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
                 volume={(f: number) => {
                   // Звук нижнего клипа под верхним на той же дорожке не слышен.
                   if (covered(r.start + f, r, own)) return 0;
-                  const q = partAt(r, f);
-                  return propsOf(q).volume * fade(r.start + f - q.start, q);
+                  return loudnessAt(partAt(r, f), r.start + f, fps, t.volume ?? 1);
                 }}
               />
             </Sequence>

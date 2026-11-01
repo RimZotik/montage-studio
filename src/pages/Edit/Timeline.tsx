@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Eye, EyeOff, Link2, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
+import { Eye, EyeOff, Link2, Lock, LockOpen, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clip, MediaItem, Op, ProjectView, Track } from "@/shared/ipc/bindings";
@@ -44,6 +44,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
   useEffect(() => setPending(null), [view.clips]);
   const mediaDrag = useDragMedia();
   const byPath = useMemo(() => new Map(media.map((m) => [m.path, m])), [media]);
+  const order = useMemo(() => new Map(view.clips.map((c, i) => [c.id, i])), [view.clips]);
   const width = Math.max(total + fps * 10, fps * 40) * zoom;
 
   const frameAt = useCallback((clientX: number) => {
@@ -196,10 +197,10 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
               <b className={`swatch ${tr.kind}`} />
               <span className="lname">{tr.name}</span>
               <span className="lkind">{t(`edit.track.${tr.kind}`)}</span>
-              <button className="iconbtn" title={t("edit.mute")} onClick={() => void apply([{ op: "setTrack", id: tr.id, muted: !tr.muted, locked: null }], "track")}>
+              <button className="iconbtn" title={t("edit.mute")} onClick={() => void apply([{ op: "setTrack", id: tr.id, muted: !tr.muted, locked: null, volume: null }], "track")}>
                 {tr.kind === "audio" ? tr.muted ? <VolumeX size={12} strokeWidth={1.75} /> : <Volume2 size={12} strokeWidth={1.75} /> : tr.muted ? <EyeOff size={12} strokeWidth={1.75} /> : <Eye size={12} strokeWidth={1.75} />}
               </button>
-              <button className="iconbtn" title={t("edit.lock")} onClick={() => void apply([{ op: "setTrack", id: tr.id, muted: null, locked: !tr.locked }], "track")}>
+              <button className="iconbtn" title={t("edit.lock")} onClick={() => void apply([{ op: "setTrack", id: tr.id, muted: null, locked: !tr.locked, volume: null }], "track")}>
                 {tr.locked ? <Lock size={12} strokeWidth={1.75} /> : <LockOpen size={12} strokeWidth={1.75} />}
               </button>
             </div>
@@ -218,13 +219,15 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
                 return (
                   <div
                     key={c.id}
+                    data-clip={c.id}
                     className={`clip ${tr.kind} ${selected.includes(c.id) ? "sel" : ""}`}
-                    style={{ left: HEAD + start * zoom, width: Math.max(4, duration * zoom), backgroundImage: bg, zIndex: 1 + view.clips.indexOf(c) }}
+                    style={{ left: HEAD + start * zoom, width: Math.max(4, duration * zoom), backgroundImage: bg, zIndex: 1 + (order.get(c.id) ?? 0) }}
                     onPointerDown={(e) => onClipDown(e, c, "move")}
                     title={`${label ?? ""} · ${timecode(start, fps)} – ${timecode(start + duration, fps)}`}
                   >
                     <span className="h l" onPointerDown={(e) => onClipDown(e, c, "trimL")} />
                     {c.link && <Link2 className="lnk" size={11} strokeWidth={2} />}
+                    {!!c.effects?.length && <Sparkles className="lnk fxmark" size={11} strokeWidth={2} />}
                     <span className="cl">{label}</span>
                     <span className="h r" onPointerDown={(e) => onClipDown(e, c, "trimR")} />
                   </div>

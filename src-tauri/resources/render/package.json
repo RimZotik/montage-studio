@@ -1,0 +1,9 @@
+{
+  "name": "montage-studio-render",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@remotion/renderer": "4.0.539"
+  }
+}

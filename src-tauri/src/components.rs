@@ -24,7 +24,12 @@ use crate::error::{AppError, AppResult};
 pub enum ComponentId {
     Node,
     Ffmpeg,
+    /// Модель распознавания речи (необязательный: ставится, когда понадобилась).
+    Speech,
 }
+
+/// Имя файла модели в папке компонента.
+pub const SPEECH_MODEL: &str = "model.bin";
 
 pub struct Manifest {
     pub id: ComponentId,
@@ -34,10 +39,12 @@ pub struct Manifest {
     pub size: u64,
     /// Файл внутри установленной папки, по которому видно, что установка цела.
     pub check: &'static str,
+    /// Один файл, а не архив: кладется как `check` без распаковки.
+    pub raw: bool,
 }
 
 /// Закрепленные версии. Обновление — новая строка с суммой из официальной публикации.
-pub const MANIFEST: [Manifest; 2] = [
+pub const MANIFEST: [Manifest; 3] = [
     Manifest {
         id: ComponentId::Node,
         version: "24.22.2",
@@ -45,6 +52,7 @@ pub const MANIFEST: [Manifest; 2] = [
         sha256: "ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2",
         size: 37_754_834,
         check: "node.exe",
+        raw: false,
     },
     Manifest {
         id: ComponentId::Ffmpeg,
@@ -53,6 +61,16 @@ pub const MANIFEST: [Manifest; 2] = [
         sha256: "8d31e162f1616e37aab3fa2db991b97e1b8dbeb1c8465fd81a81be16ff91b328",
         size: 99_899_672,
         check: "bin/ffmpeg.exe",
+        raw: false,
+    },
+    Manifest {
+        id: ComponentId::Speech,
+        version: "large-v3-turbo-q5_0",
+        url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
+        sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+        size: 574_041_195,
+        check: SPEECH_MODEL,
+        raw: true,
     },
 ];
 
@@ -65,6 +83,7 @@ pub fn dir_name(id: ComponentId) -> &'static str {
     match id {
         ComponentId::Node => "node",
         ComponentId::Ffmpeg => "ffmpeg",
+        ComponentId::Speech => "speech",
     }
 }
 
@@ -206,10 +225,15 @@ async fn install(app: &AppHandle, m: &'static Manifest, cancel: &AtomicBool) -> 
 
     emit(app, m.id, Phase::Extract, m.size, m.size, None);
     let (fresh, target, old) = (root.join(format!(".{name}.new")), root.join(name), root.join(format!(".{name}.old")));
-    let (part2, fresh2, version, check) = (part.clone(), fresh.clone(), m.version, m.check);
+    let (part2, fresh2, version, check, raw) = (part.clone(), fresh.clone(), m.version, m.check, m.raw);
     tauri::async_runtime::spawn_blocking(move || -> AppResult<()> {
         let _ = std::fs::remove_dir_all(&fresh2);
-        extract_stripped(&part2, &fresh2)?;
+        if raw {
+            std::fs::create_dir_all(&fresh2)?;
+            std::fs::rename(&part2, fresh2.join(check))?;
+        } else {
+            extract_stripped(&part2, &fresh2)?;
+        }
         if !fresh2.join(check).is_file() {
             return Err(AppError::new("badArchive", format!("{check} missing in archive")));
         }
@@ -281,7 +305,7 @@ mod tests {
         for m in &MANIFEST {
             assert_eq!(m.sha256.len(), 64, "{:?}", m.id);
             assert!(m.sha256.bytes().all(|b| b.is_ascii_hexdigit()));
-            assert!(m.url.starts_with("https://") && m.url.ends_with(".zip") && m.url.contains(m.version));
+            assert!(m.url.starts_with("https://") && (m.raw || m.url.ends_with(".zip")) && m.url.contains(m.version));
         }
     }
 
@@ -312,7 +336,7 @@ mod tests {
     #[test]
     #[ignore = "качает ~130 МБ"]
     fn live_archives() {
-        for m in &MANIFEST {
+        for m in MANIFEST.iter().filter(|m| !m.raw) {
             live_archive(m);
         }
     }

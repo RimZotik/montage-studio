@@ -23,7 +23,8 @@ fn capabilities(version: &str) -> String {
          - Studio MCP tools (server `studio`): `project_summary`, `media_list`, `timeline_get`, `timeline_apply` (batched ops, one undo step), \
          `ui_seek`, `ui_select`, `ui_tab`, `log_errors`. Start with `project_summary`; read only the time range you need with `timeline_get`; \
          put all edits of one step into one `timeline_apply` call. Times are frames (seconds × fps).\n\
-         - Not available yet: speech-to-text captions, audio ducking, smart clips, rendering a frame for review — plan them and say so.\n\
+         - Library and sound tools: `library_list`, `library_get`, `library_save`, `pack_edit`, `effect_apply`, `tool_run`, `speech_transcribe`, `speech_find`, `audio_analyze`, `audio_peaks`, `render_frame`, `export_start`, `export_status`. See the rules below.\n\
+         - Not available yet: code-driven effects and smart clips — plan them and say so.\n\
          - Proposals and questions use fenced blocks the chat renders as cards (instead of `ui.propose` / `ui.ask`):\n\
          ```studio-proposal\n{{\"id\":\"p1\",\"kind\":\"plan|tool|effect|smart|rule|project\",\"title\":\"…\",\"description\":\"…\",\"details\":[\"…\"]}}\n```\n\
          ```studio-ask\n{{\"id\":\"q1\",\"question\":\"…\",\"options\":[\"…\",\"…\"]}}\n```\n\
@@ -66,6 +67,27 @@ pub fn system_prompt(dir: &Path, doc: &Snapshot, version: &str) -> (String, u64)
 pub fn turn_context(doc: &Snapshot) -> String {
     let seq = &doc.project.sequence;
     format!("[studio: {}x{} {}fps]\n", seq.width, seq.height, seq.fps)
+}
+
+/// Короткий список библиотеки: только если изменился с прошлого раза (экономия токенов — Claude
+/// знает, что уже есть, и не придумывает заново).
+pub fn library_block(app: &tauri::AppHandle, seen: &std::sync::atomic::AtomicU64) -> String {
+    use tauri::Manager;
+    let Ok(root) = crate::library::root_of(app) else { return String::new() };
+    if crate::library::init(&root).is_err() {
+        return String::new();
+    }
+    let used = app.try_state::<crate::db::Db>().and_then(|db| crate::library::usage(&db).ok()).unwrap_or_default();
+    // Хэш — по составу, а не по счетчикам: порядок от использования не повод отправлять заново.
+    let mut names: Vec<String> = crate::library::items(&root).iter().map(|(i, _)| format!("{}#{}", i.id, i.revision)).collect();
+    names.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    names.hash(&mut h);
+    let hash = h.finish();
+    if seen.swap(hash, std::sync::atomic::Ordering::SeqCst) == hash {
+        return String::new();
+    }
+    crate::library::compact_index(&root, &used, 60)
 }
 
 #[cfg(test)]

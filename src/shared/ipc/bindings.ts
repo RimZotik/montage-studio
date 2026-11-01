@@ -31,13 +31,13 @@ export const commands = {
 	updateCheckNow: () => __TAURI_INVOKE<void>("update_check_now"),
 	/**  Поставить скачанное обновление: тихая установка, приложение перезапустится новым. */
 	updateInstall: () => typedError<null, AppError>(__TAURI_INVOKE("update_install")),
-	projectLoad: (path: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_load", { path })),
+	projectLoad: (path: string) => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_load", { path })),
 	projectClose: () => __TAURI_INVOKE<void>("project_close"),
 	projectCurrent: () => __TAURI_INVOKE<{
 	path: string,
 	project: ProjectFile,
 	tracks: Track[],
-	clips: Clip[],
+	clips: Clip_Serialize[],
 	markers: Marker[],
 	canUndo: boolean,
 	canRedo: boolean,
@@ -46,18 +46,18 @@ export const commands = {
 	redoLabel: string | null,
 } | null>("project_current"),
 	/**  Настройки последовательности (с отменой). */
-	projectSetSequence: (sequence: Sequence) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_set_sequence", { sequence })),
+	projectSetSequence: (sequence: Sequence) => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_set_sequence", { sequence })),
 	/**  Переименовать проект (имя в `project.json`; папка остается). */
-	projectRename: (name: string) => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_rename", { name })),
-	projectUndo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo")),
-	projectRedo: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_redo")),
+	projectRename: (name: string) => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_rename", { name })),
+	projectUndo: () => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_undo")),
+	projectRedo: () => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_redo")),
 	/**
 	 *  Правка таймлайна пакетом операций (`timeline::Op`): проверяется и применяется целиком, один
 	 *  шаг истории с подписью `label`. Возвращает ID созданных клипов.
 	 */
 	timelineApply: (ops: Op[], label: string) => typedError<string[], AppError>(__TAURI_INVOKE("timeline_apply", { ops, label })),
 	/**  Отменить весь последний ход Claude (все шаги с его подписью `claude#N` подряд). */
-	projectUndoClaude: () => typedError<ProjectView, AppError>(__TAURI_INVOKE("project_undo_claude")),
+	projectUndoClaude: () => typedError<ProjectView_Serialize, AppError>(__TAURI_INVOKE("project_undo_claude")),
 	/**  Интерфейс сообщает головку, выделение и вкладку (для сводки Claude). */
 	uiStateReport: (ui: UiState) => __TAURI_INVOKE<void>("ui_state_report", { ui }),
 	errorsCount: () => __TAURI_INVOKE<number>("errors_count"),
@@ -86,15 +86,34 @@ export const commands = {
 	mediaMove: (path: string, category: string) => typedError<null, AppError>(__TAURI_INVOKE("media_move", { path, category })),
 	rulesRead: () => typedError<RuleFile[], AppError>(__TAURI_INVOKE("rules_read")),
 	rulesWrite: (name: string, text: string) => typedError<null, AppError>(__TAURI_INVOKE("rules_write", { name, text })),
+	speechModel: () => typedError<SpeechModel, AppError>(__TAURI_INVOKE("speech_model")),
+	libraryView: () => typedError<LibraryView, AppError>(__TAURI_INVOKE("library_view")),
+	librarySave: (item: Item, pack: string | null) => typedError<Item, AppError>(__TAURI_INVOKE("library_save", { item, pack })),
+	libraryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("library_delete", { id })),
+	packNew: (name: string) => typedError<Pack, AppError>(__TAURI_INVOKE("pack_new", { name })),
+	packSetName: (id: string, name: string) => typedError<null, AppError>(__TAURI_INVOKE("pack_set_name", { id, name })),
+	packRemove: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("pack_remove", { id })),
+	packItem: (pack: string, item: string, add: boolean) => typedError<null, AppError>(__TAURI_INVOKE("pack_item", { pack, item, add })),
+	packExport: (id: string, path: string) => typedError<number, AppError>(__TAURI_INVOKE("pack_export", { id, path })),
+	packImport: (path: string) => typedError<Pack, AppError>(__TAURI_INVOKE("pack_import", { path })),
+	toolRun: (id: string, params: Json, clips: string[]) => typedError<ToolOutcome, AppError>(__TAURI_INVOKE("tool_run", { id, params, clips })),
+	effectApply: (id: string, params: Json, clips: string[]) => typedError<string[], AppError>(__TAURI_INVOKE("effect_apply", { id, params, clips })),
+	exportStatus: () => typedError<ExportStatus, AppError>(__TAURI_INVOKE("export_status")),
+	exportEngineInstall: () => typedError<null, AppError>(__TAURI_INVOKE("export_engine_install")),
+	exportStart: (settings: ExportSettings) => typedError<string, AppError>(__TAURI_INVOKE("export_start", { settings })),
+	exportCancel: () => __TAURI_INVOKE<void>("export_cancel"),
 };
 
 /** Events */
 export const events = {
 	chatEvent: makeEvent<ChatEvent>("chat-event"),
 	componentProgress: makeEvent<ComponentProgress>("component-progress"),
+	exportProgress: makeEvent<ExportProgress>("export-progress"),
+	libraryChanged: makeEvent<LibraryChanged>("library-changed"),
 	limitsChanged: makeEvent<LimitsChanged>("limits-changed"),
 	mediaChanged: makeEvent<MediaChanged>("media-changed"),
-	projectChanged: makeEvent<ProjectChanged>("project-changed"),
+	projectChanged: makeEvent<ProjectChanged_Deserialize>("project-changed"),
+	speechProgress: makeEvent<SpeechProgress>("speech-progress"),
 	uiCommand: makeEvent<UiCommand>("ui-command"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
 };
@@ -103,6 +122,22 @@ export const events = {
 export type AppError = {
 	code: string,
 	message: string,
+};
+
+/**
+ *  Эффект на клипе: копия из библиотеки вместе со значениями и панелью управления. Проект не
+ *  зависит от библиотеки, а панель и анимацию можно поменять только у этого клипа.
+ */
+export type AppliedEffect = {
+	/**  ID на клипе (`fx1`); присваивает ядро. */
+	id?: string,
+	/**  ID в библиотеке. */
+	effect: string,
+	name: any,
+	enabled?: boolean,
+	params?: any,
+	controls?: any,
+	spec?: any,
 };
 
 export type ChatEvent = 
@@ -129,7 +164,71 @@ export type ChatItem = {
 	at: number,
 };
 
-export type Clip = {
+export type Clip = Clip_Serialize | Clip_Deserialize;
+
+export type ClipKind = 
+/**  Файл медиа (видео, звук, картинка). */
+"media" | 
+/**  Текст субтитров. */
+"caption" | 
+/**  Заливка цветом. */
+"solid";
+
+export type ClipProps = ClipProps_Serialize | ClipProps_Deserialize;
+
+/**  Изменить часть свойств: незаданные остаются как были. */
+export type ClipPropsPatch = {
+	volume?: number | null,
+	opacity?: number | null,
+	scale?: number | null,
+	x?: number | null,
+	y?: number | null,
+	fadeIn?: number | null,
+	fadeOut?: number | null,
+	volumeKeys?: ([number, number | null])[] | null,
+};
+
+export type ClipProps_Deserialize = {
+	/**  Громкость 0–2 (1 — как есть). */
+	volume?: number | null,
+	/**  Прозрачность 0–1. */
+	opacity?: number | null,
+	/**  Масштаб (1 — по кадру). */
+	scale?: number | null,
+	/**  Сдвиг от центра кадра, пикселей последовательности. */
+	x?: number | null,
+	y?: number | null,
+	/**  Плавное появление и исчезновение звука/картинки, кадров. */
+	fadeIn?: number,
+	fadeOut?: number,
+	/**
+	 *  Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
+	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
+	 */
+	volumeKeys?: ([number, number | null])[],
+};
+
+export type ClipProps_Serialize = {
+	/**  Громкость 0–2 (1 — как есть). */
+	volume: number | null,
+	/**  Прозрачность 0–1. */
+	opacity: number | null,
+	/**  Масштаб (1 — по кадру). */
+	scale: number | null,
+	/**  Сдвиг от центра кадра, пикселей последовательности. */
+	x: number | null,
+	y: number | null,
+	/**  Плавное появление и исчезновение звука/картинки, кадров. */
+	fadeIn: number,
+	fadeOut: number,
+	/**
+	 *  Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
+	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
+	 */
+	volumeKeys?: ([number, number | null])[],
+};
+
+export type Clip_Deserialize = {
 	id: string,
 	track: string,
 	kind: ClipKind,
@@ -148,33 +247,38 @@ export type Clip = {
 	 *  вместе.
 	 */
 	link?: string | null,
-	props?: ClipProps,
+	props?: ClipProps_Deserialize,
+	/**  Эффекты по порядку наложения. */
+	effects?: AppliedEffect[],
 };
 
-export type ClipKind = 
-/**  Файл медиа (видео, звук, картинка). */
-"media" | 
-/**  Текст субтитров. */
-"caption" | 
-/**  Заливка цветом. */
-"solid";
-
-export type ClipProps = {
-	/**  Громкость 0–2 (1 — как есть). */
-	volume?: number | null,
-	/**  Прозрачность 0–1. */
-	opacity?: number | null,
-	/**  Масштаб (1 — по кадру). */
-	scale?: number | null,
-	/**  Сдвиг от центра кадра, пикселей последовательности. */
-	x?: number | null,
-	y?: number | null,
-	/**  Плавное появление и исчезновение звука/картинки, кадров. */
-	fadeIn?: number,
-	fadeOut?: number,
+export type Clip_Serialize = {
+	id: string,
+	track: string,
+	kind: ClipKind,
+	/**  Путь к файлу внутри проекта (`media/...`) — у `media`. */
+	src: string | null,
+	/**  Текст — у `caption`; цвет `#RRGGBB` — у `solid`. */
+	text: string | null,
+	/**  Начало на таймлайне, кадр. */
+	start: number,
+	/**  Длительность, кадров. */
+	duration: number,
+	/**  С какого кадра файла начинается клип (обрезка начала). */
+	offset: number,
+	/**
+	 *  Группа связанных клипов (видео и звук одного файла): перенос, обрезка, разрез и удаление —
+	 *  вместе.
+	 */
+	link: string | null,
+	props: ClipProps_Serialize,
+	/**  Эффекты по порядку наложения. */
+	effects?: AppliedEffect[],
 };
 
-export type ComponentId = "node" | "ffmpeg";
+export type ComponentId = "node" | "ffmpeg" | 
+/**  Модель распознавания речи (необязательный: ставится, когда понадобилась). */
+"speech";
 
 export type ComponentProgress = {
 	id: ComponentId,
@@ -188,6 +292,47 @@ export type ErrorEntry = {
 	at: number,
 	code: string,
 	message: string,
+};
+
+export type ExportFile = {
+	name: string,
+	path: string,
+	/**  Размер, МБ. */
+	sizeMb: number | null,
+	durationS: number | null,
+	width: number | null,
+	height: number | null,
+	/**  Средний поток, Мбит/с. */
+	mbps: number | null,
+};
+
+/**  Ход экспорта и установки движка. */
+export type ExportProgress = {
+	/**  `install`, `render`, `encode`, `finish`, `done`, `error`, `cancelled`. */
+	phase: string,
+	/**  0–1. */
+	progress: number | null,
+	message: string | null,
+	output: string | null,
+};
+
+/**  Настройки экспорта. */
+export type ExportSettings = {
+	/**  Имя файла без расширения; пусто — по проекту. */
+	name?: string,
+	/**  `h264` (подходит всем) или `h265` (меньше файл, но не все площадки и плееры). */
+	codec?: string,
+	/**  `max`, `high` (по умолчанию) или `compact`. */
+	quality?: string,
+	/**  Размер кадра относительно последовательности: 1, 0.5. */
+	scale?: number | null,
+};
+
+export type ExportStatus = {
+	engineReady: boolean,
+	nodeFound: boolean,
+	running: boolean,
+	files: ExportFile[],
 };
 
 export type Hardware = {
@@ -205,6 +350,55 @@ export type Hardware = {
 export type ImportResult = {
 	imported: number,
 	skipped: Skipped[],
+};
+
+/**  Эффект или инструмент — содержимое `effect.json` / `tool.json`. */
+export type Item = {
+	version?: number,
+	id: string,
+	/**  `effect` или `tool`. */
+	kind: string,
+	/**  Строка или `{ru, en}`. */
+	name: any,
+	description?: any,
+	/**  Назначение: `video`, `audio`, `text`, `sequence`, `transition`. */
+	targets?: string[],
+	tags?: string[],
+	/**  Панель управления: элементы по порядку (`docs/extensions.md`). */
+	controls?: any,
+	/**  Эффект: что и как анимируется. */
+	spec?: any,
+	/**  Инструмент: `builtin` или `ops`. */
+	engine?: string | null,
+	builtin?: string | null,
+	/**  Инструмент `ops`: шаблон операций таймлайна. */
+	steps?: any,
+	/**  Инструмент `ops`: `selection` — шаблон на каждый выбранный клип, иначе один раз. */
+	each?: string | null,
+	/**  `studio`, `user`, `claude`. */
+	author?: string,
+	/**  Номер правки элемента. */
+	revision?: number,
+};
+
+/**  Свободный JSON от интерфейса (значения панели). */
+export type Json = any;
+
+/**  Библиотека поменялась (интерфейс перечитывает). */
+export type LibraryChanged = null;
+
+/**  Библиотека для интерфейса. */
+export type LibraryRow = {
+	item: Item,
+	pack: string,
+	uses: number,
+	lastUsed: number | null,
+};
+
+export type LibraryView = {
+	root: string,
+	packs: Pack[],
+	items: LibraryRow[],
 };
 
 export type LimitWindow = {
@@ -262,7 +456,27 @@ export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | n
 /**  Разрезать клип в кадре таймлайна. */
 { op: "splitClip"; id: string; at: number } | 
 /**  Удалить клипы; `ripple` — сдвинуть следующие клипы тех же дорожек влево на освободившееся. */
-{ op: "deleteClips"; ids: string[]; ripple: boolean } | { op: "setProps"; id: string; props: ClipProps } | { op: "setText"; id: string; text: string } | { op: "setTrack"; id: string; muted: boolean | null; locked: boolean | null } | { op: "addMarker"; frame: number; label: string } | { op: "removeMarker"; frame: number };
+{ op: "deleteClips"; ids: string[]; ripple: boolean } | 
+/**  Изменить свойства: незаданные остаются как были. */
+{ op: "setProps"; id: string; props: ClipPropsPatch } | { op: "setText"; id: string; text: string } | { op: "setTrack"; id: string; muted?: boolean | null; locked?: boolean | null; volume?: number | null } | 
+/**  Наложить эффект на клип. */
+{ op: "addEffect"; clip: string; effect: AppliedEffect } | 
+/**  Изменить эффект на клипе: значения (добавляются к прежним), вкл/выкл, панель, анимацию. */
+{ op: "setEffect"; clip: string; fx: string; params?: any; enabled?: boolean | null; controls?: any; spec?: any } | { op: "removeEffect"; clip: string; fx: string } | { op: "addMarker"; frame: number; label: string } | { op: "removeMarker"; frame: number };
+
+export type Pack = {
+	version?: number,
+	id: string,
+	name: any,
+	description?: any,
+	author?: string,
+	/**  Базовый пак: менять нельзя, только копировать. */
+	readonly?: boolean,
+	/**  Элементы других паков, добавленные сюда. */
+	refs?: string[],
+	/**  Версия содержимого базового пака. */
+	packVersion?: number,
+};
 
 export type Phase = "download" | "verify" | "extract" | "done" | "error" | "cancelled";
 
@@ -276,7 +490,11 @@ export type Probe = {
 	video: boolean,
 };
 
-export type ProjectChanged = ProjectView | null;
+export type ProjectChanged = ProjectChanged_Serialize | ProjectChanged_Deserialize;
+
+export type ProjectChanged_Deserialize = ProjectView_Deserialize | null;
+
+export type ProjectChanged_Serialize = ProjectView_Serialize | null;
 
 export type ProjectFile = {
 	version: number,
@@ -301,11 +519,28 @@ export type ProjectSummary = {
 };
 
 /**  Что видит интерфейс об открытом проекте. */
-export type ProjectView = {
+export type ProjectView = ProjectView_Serialize | ProjectView_Deserialize;
+
+/**  Что видит интерфейс об открытом проекте. */
+export type ProjectView_Deserialize = {
 	path: string,
 	project: ProjectFile,
 	tracks: Track[],
-	clips: Clip[],
+	clips: Clip_Deserialize[],
+	markers: Marker[],
+	canUndo: boolean,
+	canRedo: boolean,
+	/**  Что отменит «Отменить» / вернет «Повторить». */
+	undoLabel: string | null,
+	redoLabel: string | null,
+};
+
+/**  Что видит интерфейс об открытом проекте. */
+export type ProjectView_Serialize = {
+	path: string,
+	project: ProjectFile,
+	tracks: Track[],
+	clips: Clip_Serialize[],
 	markers: Marker[],
 	canUndo: boolean,
 	canRedo: boolean,
@@ -343,12 +578,39 @@ export type Skipped = {
 	reason: string,
 };
 
+/**  Установлена ли модель распознавания и какого она размера (для кнопки установки). */
+export type SpeechModel = {
+	installed: boolean,
+	downloadMb: number,
+};
+
+/**  Ход расшифровки — интерфейсу. */
+export type SpeechProgress = {
+	path: string,
+	/**  0–1. */
+	progress: number | null,
+	done: boolean,
+	error: string | null,
+};
+
 export type SystemReport = {
 	tools: ToolStatus[],
 	hardware: Hardware,
 };
 
 export type ToolId = "claude" | "node" | "ffmpeg" | "ffprobe";
+
+/**  Итог запуска. */
+export type ToolOutcome = {
+	/**  `done`, `pending` (расшифровка еще идет, запустить снова) или `needsSpeechModel`. */
+	status: string,
+	/**  Сколько клипов создано или изменено. */
+	changed: number,
+	/**  0–1 у `pending`. */
+	progress: number | null,
+	/**  Короткий итог (для Claude и подсказки). */
+	note: string,
+};
 
 export type ToolSource = 
 /**  Папка компонентов приложения. */
@@ -380,6 +642,8 @@ export type Track = {
 	name: string,
 	muted?: boolean,
 	locked?: boolean,
+	/**  Громкость всей дорожки 0–2. */
+	volume?: number | null,
 };
 
 export type TrackKind = "video" | "audio" | "captions";

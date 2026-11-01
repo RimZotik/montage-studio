@@ -4,6 +4,7 @@
 //! путем, что и действия пользователя. Ответы короткие и текстовые — экономия токенов.
 
 mod dev;
+mod studio;
 mod tools;
 
 use std::io::Read;
@@ -91,6 +92,9 @@ fn handle_with<R: tauri::Runtime>(app: &AppHandle<R>, msg: &Value, extra_call: i
         "ping" => reply(&id, json!({})),
         "tools/list" => {
             let mut all = tools::list();
+            if let Some(list) = all.as_array_mut() {
+                list.extend(studio::list().as_array().into_iter().flatten().cloned());
+            }
             if let (Some(list), Some(more)) = (all.as_array_mut(), extra.as_ref().and_then(Value::as_array)) {
                 list.extend(more.iter().cloned());
             }
@@ -121,14 +125,21 @@ pub fn start<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<McpInfo> {
 /// Сервер приложения: с инструментами разработчика по их ключу.
 pub fn start_app(app: &AppHandle) -> Option<McpInfo> {
     let dev_app = app.clone();
-    start_with(app, move |name, args, dev| if dev && name.starts_with("dev_") { Some(dev::call(&dev_app, name, args)) } else { None })
+    start_with(app, move |name, args, dev| {
+        if dev && name.starts_with("dev_") {
+            Some(dev::call(&dev_app, name, args))
+        } else {
+            studio::call(&dev_app, name, args)
+        }
+    })
 }
 
-fn start_with<R: tauri::Runtime>(app: &AppHandle<R>, extra: impl Fn(&str, &Value, bool) -> Option<Result<String, String>> + Send + 'static) -> Option<McpInfo> {
+fn start_with<R: tauri::Runtime>(app: &AppHandle<R>, extra: impl Fn(&str, &Value, bool) -> Option<Result<String, String>> + Send + Sync + 'static) -> Option<McpInfo> {
     let server = tiny_http::Server::http("127.0.0.1:0").map_err(|e| log::warn!("mcp server: {e}")).ok()?;
     let port = server.server_addr().to_ip().map(|a| a.port())?;
     let info = McpInfo { url: format!("http://127.0.0.1:{port}/mcp"), token: random_token(), dev_token: random_token() };
     let (app2, token, dev_token) = (app.clone(), info.token.clone(), info.dev_token.clone());
+    let extra = std::sync::Arc::new(extra);
     std::thread::spawn(move || {
         for mut req in server.incoming_requests() {
             let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.as_str().to_owned()).unwrap_or_default();
@@ -151,24 +162,28 @@ fn start_with<R: tauri::Runtime>(app: &AppHandle<R>, extra: impl Fn(&str, &Value
                 let _ = req.respond(tiny_http::Response::empty(400));
                 continue;
             };
-            // Ошибка в одном вызове не останавливает сервер.
-            let dev_list = dev.then(dev::list);
-            let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_with(&app2, &msg, |n, a| extra(n, a, dev), dev_list)))
-                .unwrap_or_else(|_| msg.get("id").map(|id| error(id, -32603, "internal error")));
-            let response = match out {
-                Some(out) => {
-                    let header = tiny_http::Header::from_bytes("Content-Type", "application/json").ok();
-                    let mut r = tiny_http::Response::from_string(out.to_string());
-                    if let Some(h) = header {
-                        r = r.with_header(h);
+            // Свой поток: долгий вызов (анализ, ожидание ответа) не держит остальные.
+            let (app3, extra2) = (app2.clone(), std::sync::Arc::clone(&extra));
+            std::thread::spawn(move || {
+                // Ошибка в одном вызове не останавливает сервер.
+                let dev_list = dev.then(dev::list);
+                let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| handle_with(&app3, &msg, |n, a| extra2(n, a, dev), dev_list)))
+                    .unwrap_or_else(|_| msg.get("id").map(|id| error(id, -32603, "internal error")));
+                let response = match out {
+                    Some(out) => {
+                        let header = tiny_http::Header::from_bytes("Content-Type", "application/json").ok();
+                        let mut r = tiny_http::Response::from_string(out.to_string());
+                        if let Some(h) = header {
+                            r = r.with_header(h);
+                        }
+                        req.respond(r)
                     }
-                    req.respond(r)
+                    None => req.respond(tiny_http::Response::empty(202)),
+                };
+                if let Err(e) = response {
+                    log::info!("mcp respond: {e}");
                 }
-                None => req.respond(tiny_http::Response::empty(202)),
-            };
-            if let Err(e) = response {
-                log::info!("mcp respond: {e}");
-            }
+            });
         }
     });
     log::info!("mcp server on 127.0.0.1:{port}");

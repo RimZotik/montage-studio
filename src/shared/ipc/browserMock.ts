@@ -2,6 +2,8 @@
 // образцами данных. Только для разработки — в сборку приложения не попадает (main.tsx подключает
 // его лишь в режиме разработки и без Tauri).
 
+import basePack from "../../../src-tauri/resources/library/base-pack.json";
+
 const now = Math.floor(Date.now() / 1000);
 const day = 86400;
 
@@ -95,7 +97,7 @@ export function installBrowserMock() {
       // Проект: открытие, правки последовательности и имени с отменой — в памяти.
       if (cmd === "project_load") {
         const path = String(args?.path);
-        const tr = (id: string, kind: string, name: string) => ({ id, kind, name, muted: false, locked: false });
+        const tr = (id: string, kind: string, name: string) => ({ id, kind, name, muted: false, locked: false, volume: 1 });
         const clip = (id: string, track: string, kind: string, src: string | null, text: string | null, start: number, duration: number) => ({ id, track, kind, src, text, start, duration, offset: 0, props: { volume: 1, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } });
         mockProject = {
           path,
@@ -162,6 +164,13 @@ export function installBrowserMock() {
         emit("project-changed", mockProject);
         return [];
       }
+      if (cmd === "library_view")
+        return {
+          root: "D:\\Документы\\Montage Studio\\Library",
+          packs: [{ version: 1, id: "main", name: { ru: "Главный", en: "Main" }, description: "", author: "user", readonly: false, refs: [], packVersion: 0 }, { version: 1, refs: [], ...basePack.pack }],
+          items: basePack.items.map((item) => ({ item: { version: 1, revision: 1, tags: [], ...item }, pack: "base", uses: 0, lastUsed: null })),
+        };
+      if (cmd === "speech_model") return { installed: false, downloadMb: 548 };
       if (cmd === "project_close") {
         mockProject = null;
         return null;

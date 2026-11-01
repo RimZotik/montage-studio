@@ -10,6 +10,8 @@ import { NewProjectDialog } from "@/pages/Home/NewProjectDialog";
 import { Home } from "@/pages/Home/Home";
 import { Prepare } from "@/pages/Project/Prepare";
 import { Projects } from "@/pages/Projects/Projects";
+import { Library } from "@/pages/Library/Library";
+import { ExportPage } from "@/pages/Export/Export";
 import { ChatPanel } from "@/panels/Claude/ChatPanel";
 import { EditPage } from "@/pages/Edit/EditPage";
 import { pickLanguage } from "@/shared/i18n";
@@ -361,7 +363,7 @@ export function App() {
           ) : tab === "edit" ? (
             <EditPage view={project} onError={fail} onImport={(files) => void importFiles(files)} mediaKey={mediaKey} claudeBusy={claudeBusy} />
           ) : (
-            <div className="soon">{t(`soon.${tab}`)}</div>
+            <ExportPage view={project} onError={fail} />
           )}
           </ErrorBoundary>
           {chatOpen && (
@@ -396,7 +398,9 @@ export function App() {
           onRecheck={() => void check()}
         />
       ) : (
-        <div className="soon">{t("soon.page")}</div>
+        <ErrorBoundary name="library">
+          <Library onError={fail} onToast={toast} />
+        </ErrorBoundary>
       )}
 
       <div className="status">

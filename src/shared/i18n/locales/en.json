@@ -335,11 +335,114 @@
       }
     },
     "claudeBusy": "Claude is working on the timeline — wait or stop",
-    "safeHint": "Dashed frame — the safe zone of a vertical video: anything outside may be covered by platform buttons and captions. Keep text and key things inside."
+    "safeHint": "Dashed frame — the safe zone of a vertical video: anything outside may be covered by platform buttons and captions. Keep text and key things inside.",
+    "left": {
+      "media": "Media",
+      "effects": "Effects"
+    },
+    "trackVolume": "Track {{name}}"
   },
   "crash": {
     "title": "The page did not open",
     "logged": "The error is in the log — see the errors popup below.",
     "retry": "Try again"
+  },
+  "library": {
+    "packs": "Packs",
+    "allItems": "All",
+    "newPack": "New pack",
+    "packName": "Pack name",
+    "search": "Search effects and tools",
+    "import": "Import archive",
+    "export": "Pack archive",
+    "deletePack": "Delete pack",
+    "openFolder": "Open folder",
+    "nothing": "Nothing found",
+    "pick": "Pick an effect or a tool",
+    "copy": "Save a copy",
+    "copyHint": "A copy in the main pack with the current values: you can change it",
+    "copied": "Copy saved to the main pack",
+    "exported": "Items in the archive: {{count}}",
+    "addToPack": "Add to pack",
+    "inPack": "Pack: {{pack}}",
+    "revision": "revision {{n}}",
+    "uses": "used {{count}} times",
+    "applied": "Effects",
+    "toggle": "Turn on or off",
+    "saveSetting": "Save this setting to the library",
+    "selectClip": "Select a clip or drag the effect onto it",
+    "run": "Apply",
+    "running": "Working…",
+    "toolDone": "Done. Clips changed: {{count}}",
+    "modelNeeded": "Speech recognition needs a model that runs on this computer: {{mb}} MB, downloaded once.",
+    "modelInstall": "Download the model",
+    "kind": {
+      "effect": "effect",
+      "tool": "tool"
+    },
+    "author": {
+      "studio": "studio",
+      "user": "user",
+      "claude": "Claude"
+    },
+    "filter": {
+      "all": "All",
+      "tool": "Tools",
+      "video": "Video",
+      "audio": "Sound",
+      "text": "Text",
+      "transition": "Transitions"
+    },
+    "target": {
+      "video": "Video",
+      "audio": "Sound",
+      "text": "Text",
+      "sequence": "Whole sequence",
+      "transition": "Transition"
+    }
+  },
+  "export": {
+    "title": "Export the video",
+    "name": "File name",
+    "quality": "Quality",
+    "more": "More",
+    "codec": "Codec",
+    "half": "Half size (draft)",
+    "estimate": "About {{mb}} MB",
+    "start": "Render",
+    "cancel": "Stop",
+    "files": "Finished files",
+    "noFiles": "Finished videos appear here",
+    "play": "Watch",
+    "reveal": "Show in folder",
+    "mb": "MB",
+    "mbps": "Mbit/s",
+    "engineNeeded": "Rendering needs an engine: installed once, about 300 MB.",
+    "nodeNeeded": "Install Node.js on the home page first.",
+    "engineInstall": "Install the engine",
+    "q": {
+      "high": {
+        "name": "For social networks",
+        "hint": "Great picture at a sensible size. Fits YouTube, TikTok, Instagram"
+      },
+      "max": {
+        "name": "Maximum",
+        "hint": "A margin for archive and further editing, the file is twice as big"
+      },
+      "compact": {
+        "name": "Compact",
+        "hint": "A small file to send and review"
+      }
+    },
+    "c": {
+      "h264": "H.264: fits everywhere",
+      "h265": "H.265: smaller file, but not all sites and players"
+    },
+    "phase": {
+      "install": "Installing the engine",
+      "render": "Rendering frames",
+      "encode": "Encoding",
+      "finish": "Finishing"
+    }
   }
 }

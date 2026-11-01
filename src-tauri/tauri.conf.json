@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Montage Studio",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "identifier": "app.montagestudio.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1430",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build:render && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -35,7 +35,8 @@
         "enable": true,
         "scope": [
           "**/media/**",
-          "**/.studio/cache/thumbs/*"
+          "**/.studio/cache/thumbs/*",
+          "**/output/*"
         ]
       }
     }
@@ -52,7 +53,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/claude/core-rules.md"
+      "resources/claude/core-rules.md",
+      "resources/render-bundle/**/*"
     ],
     "createUpdaterArtifacts": true,
     "windows": {

@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { AudioLines, Clapperboard, Image, Mic, Music, Upload } from "lucide-react";
-import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type MediaItem, commands as ipc, events } from "@/shared/ipc/bindings";
 import { startMediaDrag } from "@/pages/Edit/dragMedia";
@@ -35,7 +35,9 @@ type Props = {
 };
 
 /** Медиа проекта: импорт, категории, миниатюры и волны (строятся фоном), выбор для предпросмотра. */
-export function MediaColumn({ projectPath, reloadKey, selected, onSelect, onError, onImport, style, compact }: Props) {
+export const MediaColumn = memo(MediaColumnView);
+
+function MediaColumnView({ projectPath, reloadKey, selected, onSelect, onError, onImport, style, compact }: Props) {
   const { t } = useTranslation();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [cat, setCat] = useState("footage");

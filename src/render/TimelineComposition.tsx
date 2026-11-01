@@ -18,7 +18,7 @@ const IMAGE = /\.(png|jpe?g|webp|gif|svg|bmp)$/i;
 /** Свойства клипа со значениями по умолчанию (в файле поля могут отсутствовать). */
 export function propsOf(clip: Clip) {
   const p = clip.props;
-  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0, volumeKeys: p?.volumeKeys ?? [] };
+  return { volume: p?.volume ?? 1, opacity: p?.opacity ?? 1, scale: p?.scale ?? 1, x: p?.x ?? 0, y: p?.y ?? 0, fadeIn: p?.fadeIn ?? 0, fadeOut: p?.fadeOut ?? 0, speed: p?.speed ?? 1, volumeKeys: p?.volumeKeys ?? [] };
 }
 
 /** Плавное появление и исчезновение (0–1) по кадру внутри клипа. */
@@ -34,7 +34,7 @@ function fade(frame: number, clip: Clip): number {
  *  эффекты, дорожка. */
 function loudnessAt(q: Clip, abs: number, fps: number, trackVolume: number): number {
   const inClip = abs - q.start;
-  return propsOf(q).volume * fade(inClip, q) * volumeAt(propsOf(q).volumeKeys as [number, number][], (q.offset ?? 0) + inClip) * effectsAt(q.effects, inClip, q.duration, fps).volume * trackVolume;
+  return propsOf(q).volume * fade(inClip, q) * volumeAt(propsOf(q).volumeKeys as [number, number][], (q.offset ?? 0) + inClip * propsOf(q).speed) * effectsAt(q.effects, inClip, q.duration, fps).volume * trackVolume;
 }
 
 /** Непрерывный кусок одного файла: части встык, продолжающие друг друга в файле (после
@@ -49,7 +49,7 @@ export function runsOf(clips: Clip[]): Run[] {
   for (const c of media) {
     const prev = out[out.length - 1];
     const last = prev?.parts[prev.parts.length - 1];
-    if (prev && last && prev.track === c.track && prev.src === c.src && prev.start + prev.duration === c.start && (last.offset ?? 0) + last.duration === (c.offset ?? 0)) {
+    if (prev && last && prev.track === c.track && prev.src === c.src && prev.start + prev.duration === c.start && propsOf(last).speed === propsOf(c).speed && Math.round((last.offset ?? 0) + last.duration * propsOf(last).speed) === (c.offset ?? 0)) {
       prev.duration += c.duration;
       prev.parts.push(c);
       prev.z = Math.max(prev.z, z.get(c.id) ?? 0);
@@ -88,6 +88,7 @@ function VisualRun({ run, srcOf, muted, trackVolume }: { run: Run; srcOf: (p: st
         <Clip
           src={src}
           trimBefore={run.offset}
+          playbackRate={propsOf(run.parts[0] as Clip).speed}
           volume={(f: number) => {
             if (muted) return 0;
             return loudnessAt(partAt(run, f), run.start + f, fps, trackVolume);
@@ -116,7 +117,7 @@ function CaptionClip({ clip }: { clip: Clip }) {
   const plate = fx.background && !/^#[0-9a-f]{6}00$/i.test(fx.background) ? fx.background : undefined;
   return (
     <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }}>
-      <div style={{ fontFamily: "Geist Sans, system-ui, sans-serif", fontWeight: 700, fontSize: 64, color: fx.color ?? "#fff", textAlign: "center", lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate ? undefined : "2px #000" }}>
+      <div style={{ fontFamily: fx.font ?? "Geist Sans, system-ui, sans-serif", fontWeight: fx.weight ?? 700, fontSize: fx.size ?? 64, color: fx.color ?? "#fff", textAlign: "center", textTransform: fx.uppercase ? "uppercase" : undefined, lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate || fx.stroke === 0 ? undefined : `${fx.stroke ?? 2}px #000` }}>
         {clip.text}
       </div>
     </AbsoluteFill>
@@ -172,6 +173,7 @@ export function TimelineComposition({ sequence, tracks, clips, srcOf }: Composit
               <Html5Audio
                 src={srcOf(r.src)}
                 trimBefore={r.offset}
+                playbackRate={propsOf(r.parts[0] as Clip).speed}
                 volume={(f: number) => {
                   // Звук нижнего клипа под верхним на той же дорожке не слышен.
                   if (covered(r.start + f, r, own)) return 0;

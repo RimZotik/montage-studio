@@ -27,7 +27,10 @@ pub const MAIN: &str = "main";
 pub const BASE: &str = "base";
 const BASE_PACK: &str = include_str!("../resources/library/base-pack.json");
 /// Встроенные алгоритмы инструментов (`presets.rs`).
-pub const BUILTINS: [&str; 5] = ["beatCut", "removeSilence", "captionsFromSpeech", "normalize", "duck"];
+pub const BUILTINS: [&str; 9] = ["beatCut", "removeSilence", "captionsFromSpeech", "normalize", "duck", "audioProcess", "cutSounds", "loopEnd", "blurBackground"];
+/// Фильтры и источники звука, которые можно назвать в данных элемента: только обработка, ни один
+/// не читает и не пишет файлы, поэтому чужой архив безопасен.
+const AUDIO_FILTERS: [&str; 30] = ["aevalsrc", "anoisesrc", "sine", "highpass", "lowpass", "bandpass", "bandreject", "equalizer", "bass", "treble", "afftdn", "agate", "acompressor", "alimiter", "loudnorm", "dynaudnorm", "deesser", "aecho", "chorus", "flanger", "aphaser", "tremolo", "vibrato", "atempo", "asetrate", "aresample", "volume", "afade", "stereotools", "crystalizer"];
 const PROPS: [&str; 13] = ["opacity", "scale", "x", "y", "rotate", "blur", "brightness", "contrast", "saturate", "grayscale", "sepia", "hue", "volume"];
 const ANCHORS: [&str; 4] = ["start", "end", "span", "none"];
 /// Элементы панели без значения.
@@ -53,7 +56,7 @@ pub struct Item {
     #[serde(default = "one")]
     pub version: u32,
     pub id: String,
-    /// `effect` или `tool`.
+    /// `effect`, `tool`, `style` (правила оформления ролика) или `sound` (звук, синтезируется).
     pub kind: String,
     /// Строка или `{ru, en}`.
     #[specta(type = specta_typescript::Any)]
@@ -86,6 +89,21 @@ pub struct Item {
     /// Инструмент `ops`: `selection` — шаблон на каждый выбранный клип, иначе один раз.
     #[serde(default)]
     pub each: Option<String>,
+    /// Инструмент `audioProcess`: цепочка обработки звука; значения панели — `$id`.
+    #[serde(default)]
+    pub filter: Option<String>,
+    /// Стиль: текст правил (markdown), строка или `{ru, en}`.
+    #[serde(default)]
+    #[specta(type = specta_typescript::Any)]
+    pub rules: Value,
+    /// Звук: как его синтезировать.
+    #[serde(default)]
+    pub synth: Option<String>,
+    /// Звук: длительность и где слышен удар, секунд.
+    #[serde(default)]
+    pub seconds: Option<f64>,
+    #[serde(default)]
+    pub hit_at: Option<f64>,
     /// `studio`, `user`, `claude`.
     #[serde(default = "user")]
     pub author: String,
@@ -221,21 +239,96 @@ pub fn validate_item(item: &Item) -> AppResult<()> {
             }
         }
         "tool" => match item.engine.as_deref() {
+            Some("builtin") if item.builtin.as_deref() == Some("audioProcess") => {
+                let chain = item.filter.as_deref().ok_or_else(|| bad("audioProcess needs filter"))?;
+                check_chain(chain)?;
+                let ids: Vec<&str> = item.controls.as_array().into_iter().flatten().filter_map(|c| c["id"].as_str()).collect();
+                if let Some(r) = refs_of(chain).iter().find(|r| !ids.contains(&r.as_str())) {
+                    return Err(bad(format!("unknown value ${r}")));
+                }
+            }
             Some("builtin") if item.builtin.as_deref().is_some_and(|b| BUILTINS.contains(&b)) => {}
             Some("ops") if item.steps.as_array().is_some_and(|s| !s.is_empty() && s.iter().all(|o| o["op"].is_string())) => {}
             other => return Err(bad(format!("tool engine {other:?}: builtin with a known name, or ops with steps"))),
         },
-        other => return Err(bad(format!("kind {other}: effect or tool"))),
+        "style" => {
+            if item.rules.is_null() || item.rules.as_str().is_some_and(str::is_empty) {
+                return Err(bad("style needs rules"));
+            }
+        }
+        "sound" => {
+            check_chain(item.synth.as_deref().ok_or_else(|| bad("sound needs synth"))?)?;
+            if !item.seconds.is_some_and(|s| s > 0.0 && s <= 60.0) {
+                return Err(bad("sound needs seconds"));
+            }
+        }
+        other => return Err(bad(format!("kind {other}: effect, tool, style or sound"))),
     }
     Ok(())
 }
 
 fn folder(kind: &str) -> &'static str {
-    if kind == "tool" { "tools" } else { "effects" }
+    match kind {
+        "tool" => "tools",
+        "style" => "styles",
+        "sound" => "sounds",
+        _ => "effects",
+    }
 }
 
 fn file_name(kind: &str) -> &'static str {
-    if kind == "tool" { "tool.json" } else { "effect.json" }
+    match kind {
+        "tool" => "tool.json",
+        "style" => "style.json",
+        "sound" => "sound.json",
+        _ => "effect.json",
+    }
+}
+
+/// Части цепочки по запятым вне кавычек.
+fn chain_parts(chain: &str) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let mut quoted = false;
+    for c in chain.chars() {
+        match c {
+            '\'' => quoted = !quoted,
+            ',' if !quoted => out.push(String::new()),
+            _ => {}
+        }
+        if (c != ',' || quoted)
+            && let Some(last) = out.last_mut()
+        {
+            last.push(c);
+        }
+    }
+    out
+}
+
+/// Цепочка звука: только известные фильтры, без подключений к другим потокам и файлам.
+pub fn check_chain(chain: &str) -> AppResult<()> {
+    if chain.contains(['[', ']', ';']) {
+        return Err(bad("audio chain: a plain list of filters"));
+    }
+    for part in chain_parts(chain) {
+        let name = part.split('=').next().unwrap_or("").trim();
+        if !AUDIO_FILTERS.contains(&name) {
+            return Err(bad(format!("audio chain: filter {name:?} is not allowed")));
+        }
+    }
+    Ok(())
+}
+
+/// Подставить значения панели в цепочку: только числа.
+pub fn fill_chain(chain: &str, params: &Value) -> AppResult<String> {
+    let mut out = chain.to_owned();
+    let mut names = refs_of(chain);
+    // Сначала длинные: `$a` не должно задеть `$ab`.
+    names.sort_by_key(|n| std::cmp::Reverse(n.len()));
+    for n in names {
+        let v = params[&n].as_f64().ok_or_else(|| bad(format!("{n} must be a number")))?;
+        out = out.replace(&format!("${n}"), &v.to_string());
+    }
+    Ok(out)
 }
 
 fn item_dir(root: &Path, pack: &str, item: &Item) -> PathBuf {
@@ -267,12 +360,13 @@ pub fn init(root: &Path) -> AppResult<()> {
     if dir.is_dir() {
         std::fs::remove_dir_all(&dir)?;
     }
-    write_pack(root, &pack)?;
     for raw in bundled["items"].as_array().into_iter().flatten() {
         let item: Item = serde_json::from_value(raw.clone()).map_err(|e| AppError::new("internal", format!("base pack: {e}")))?;
         validate_item(&item)?;
         write_json(&item_dir(root, BASE, &item).join(file_name(&item.kind)), &item)?;
     }
+    // Последним: прерванная установка повторится при следующем запуске.
+    write_pack(root, &pack)?;
     log::info!("base pack {} installed", pack.pack_version);
     Ok(())
 }
@@ -297,7 +391,7 @@ pub fn packs(root: &Path) -> Vec<Pack> {
 pub fn items(root: &Path) -> Vec<(Item, String)> {
     let mut out = Vec::new();
     for pack in packs(root) {
-        for kind in ["effect", "tool"] {
+        for kind in ["effect", "tool", "style", "sound"] {
             for entry in std::fs::read_dir(root.join("packs").join(&pack.id).join(folder(kind))).into_iter().flatten().flatten() {
                 let path = entry.path().join(file_name(kind));
                 match std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Item>(&b).ok()) {
@@ -470,7 +564,7 @@ pub fn import(root: &Path, from: &Path) -> AppResult<Pack> {
     for i in 0..zip.len() {
         let entry = zip.by_index(i).map_err(|e| AppError::new("badArchive", e.to_string()))?;
         let name = entry.name().to_owned();
-        let known = name == "pack.json" || name.ends_with("/effect.json") || name.ends_with("/tool.json");
+        let known = name == "pack.json" || ["/effect.json", "/tool.json", "/style.json", "/sound.json"].iter().any(|e| name.ends_with(e));
         if !known || entry.size() > MAX_ARCHIVE_ENTRY {
             continue;
         }
@@ -489,6 +583,8 @@ pub fn import(root: &Path, from: &Path) -> AppResult<Pack> {
     let mut new_pack = Pack { id: pack_id_from(root, &label), readonly: false, refs: vec![], pack_version: 0, ..source };
     write_pack(root, &new_pack)?;
     let existing = items(root);
+    // Занятые ID: библиотека и весь архив, чтобы новый ID не совпал с другим элементом архива.
+    let mut taken: Vec<String> = existing.iter().map(|(e, _)| e.id.clone()).chain(found.iter().map(|i| i.id.clone())).collect();
     for mut item in found {
         match existing.iter().find(|(e, _)| e.id == item.id) {
             Some((e, _)) if same_content(e, &item) => {
@@ -497,10 +593,11 @@ pub fn import(root: &Path, from: &Path) -> AppResult<Pack> {
             }
             Some(_) => {
                 let mut n = 2;
-                while existing.iter().any(|(e, _)| e.id == format!("{}-{n}", item.id)) {
+                while taken.contains(&format!("{}-{n}", item.id)) {
                     n += 1;
                 }
                 item.id = format!("{}-{n}", item.id);
+                taken.push(item.id.clone());
             }
             None => {}
         }
@@ -568,7 +665,7 @@ pub fn compact_index(root: &Path, used: &HashMap<String, (u32, i64)>, limit: usi
             .collect::<Vec<_>>()
             .join(" ")
     };
-    format!("[library {total} items; effects: {}; tools: {}{}]\n", line("effect"), line("tool"), if total > limit { "; more: library_list" } else { "" })
+    format!("[library {total} items; effects: {}; tools: {}; styles: {}; sounds: {}{}]\n", line("effect"), line("tool"), line("style"), line("sound"), if total > limit { "; more: library_list" } else { "" })
 }
 
 /// Библиотека для интерфейса.
@@ -700,7 +797,7 @@ mod tests {
         assert_eq!((p[0].id.as_str(), p[1].id.as_str()), (MAIN, BASE), "главный первым, базовый вторым");
         let all = items(&root);
         assert!(all.iter().all(|(_, owner)| owner == BASE));
-        for needed in ["beat-cut", "remove-silence", "captions-from-speech", "normalize-loudness", "duck-music", "fade-in", "zoom-slow"] {
+        for needed in ["beat-cut", "remove-silence", "captions-from-speech", "normalize-loudness", "duck-music", "fade-in", "zoom-slow", "voice-clean", "whoosh-low", "style-short-retention", "loop-end"] {
             assert!(all.iter().any(|(i, _)| i.id == needed), "{needed}");
         }
         let bundled: Value = serde_json::from_str(BASE_PACK).unwrap();
@@ -805,6 +902,16 @@ mod tests {
     }
 
     #[test]
+    fn audio_chains_are_checked() {
+        assert!(check_chain("highpass=f=80,acompressor=threshold=-18dB:ratio=3,loudnorm=I=-16").is_ok());
+        assert!(check_chain("aevalsrc='0.5*sin(2*PI*90*t)*max(0,1-t)':d=1").is_ok(), "запятая в кавычках — не разделитель");
+        assert!(check_chain("amovie=C\\\\secret.wav").is_err(), "фильтр с чтением файла");
+        assert!(check_chain("volume=1[a];[a]afifo").is_err());
+        assert_eq!(fill_chain("highpass=f=$hp,volume=$hp2", &json!({ "hp": 80, "hp2": 1.5 })).unwrap(), "highpass=f=80,volume=1.5");
+        assert!(fill_chain("highpass=f=$hp", &json!({ "hp": "1,amovie=x" })).is_err(), "только числа");
+    }
+
+    #[test]
     fn defaults_and_index() {
         let (_t, root) = lib();
         let v = with_defaults(&json!([{ "type": "section" }, { "id": "a", "type": "slider", "default": 1 }, { "id": "b", "type": "toggle", "default": true }]), &json!({ "a": 5 }));
@@ -813,6 +920,6 @@ mod tests {
         let line = compact_index(&root, &used, 100);
         assert!(line.contains("effects: zoom-slow("), "частое — первым: {line}");
         assert!(line.contains("beat-cut("));
-        assert!(line.len() < 1400, "короткая строка: {} знаков", line.len());
+        assert!(line.len() < 2400, "короткая строка: {} знаков", line.len());
     }
 }

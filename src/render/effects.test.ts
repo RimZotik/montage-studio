@@ -11,6 +11,8 @@ describe("выражения", () => {
     expect(evalExpr("-$a", { a: 3 })).toBe(-3);
     expect(evalExpr("$a*2+1", { a: 3 })).toBe(7);
     expect(evalExpr("$a*0.5", { a: 3 })).toBe(1.5);
+    expect(evalExpr("$a*-1", { a: 3 })).toBe(-3);
+    expect(evalExpr("-$a*0.7", { a: 10 })).toBeCloseTo(-7);
     expect(evalExpr("$a/0", { a: 3 }), "деление на ноль не ломает кадр").toBe(3);
     expect(evalExpr("$нет", {})).toBe(0);
   });
@@ -51,6 +53,10 @@ describe("эффекты", () => {
 
   it("цвет текста из панели", () => {
     expect(effectsAt([fx({ text: { color: "$c", background: "#000000" } }, { c: "#ff0000" })], 0, 10, 30)).toMatchObject({ color: "#ff0000", background: "#000000" });
+  });
+
+  it("оформление текста из панели", () => {
+    expect(effectsAt([fx({ text: { size: "$s", stroke: 0, weight: 900, uppercase: "$u" } }, { s: 48, u: true })], 0, 10, 30)).toMatchObject({ size: 48, stroke: 0, weight: 900, uppercase: true });
   });
 
   it("огибающая громкости — плавно между ключами", () => {

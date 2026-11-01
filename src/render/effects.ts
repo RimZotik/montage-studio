@@ -11,17 +11,25 @@ export function evalExpr(v: unknown, vars: Vars): number {
   if (typeof v !== "string") return 0;
   let total = 0;
   let op = "+";
+  let sign = 1;
+  let wantValue = true;
   const tokens = v.trim().match(/[+\-*/]|[^+\-*/\s]+/g) ?? [];
-  // Минус первым — знак числа, не операция.
   for (const t of tokens) {
     if ("+-*/".includes(t)) {
-      op = op !== "+" && t === "-" ? op : t;
+      // Минус там, где ждем значение, — знак числа, не действие: `-$a`, `$a*-1`.
+      if (wantValue) {
+        if (t === "-") sign = -sign;
+        continue;
+      }
+      op = t;
+      wantValue = true;
       continue;
     }
     const raw = t.startsWith("$") ? Number(vars[t.slice(1)]) : Number(t);
-    const n = Number.isFinite(raw) ? raw : 0;
+    const n = sign * (Number.isFinite(raw) ? raw : 0);
     total = op === "+" ? total + n : op === "-" ? total - n : op === "*" ? total * n : n === 0 ? total : total / n;
-    op = "+";
+    sign = 1;
+    wantValue = false;
   }
   return total;
 }
@@ -49,7 +57,8 @@ function atKeys(keys: [number, number][], t: number, ease: (x: number) => number
   return last[1];
 }
 
-export type FxState = { opacity: number; scale: number; x: number; y: number; rotate: number; volume: number; filter: string; color?: string; background?: string };
+export type TextLook = { color?: string; background?: string; size?: number; stroke?: number; weight?: number; uppercase?: boolean; font?: string };
+export type FxState = TextLook & { opacity: number; scale: number; x: number; y: number; rotate: number; volume: number; filter: string };
 
 const MULTIPLY = new Set(["opacity", "scale", "volume", "brightness", "contrast", "saturate"]);
 
@@ -72,8 +81,16 @@ export function effectsAt(effects: AppliedEffect[] | undefined, frame: number, d
       else v[prop] = (v[prop] ?? 0) + value;
     }
     const text = fx.spec?.text;
-    if (text?.color) out.color = String(typeof text.color === "string" && text.color.startsWith("$") ? vars[text.color.slice(1)] : text.color);
-    if (text?.background) out.background = String(typeof text.background === "string" && text.background.startsWith("$") ? vars[text.background.slice(1)] : text.background);
+    if (text) {
+      const get = (k: string) => (typeof text[k] === "string" && text[k].startsWith("$") ? vars[text[k].slice(1)] : text[k]);
+      if (text.color) out.color = String(get("color"));
+      if (text.background) out.background = String(get("background"));
+      if (text.font) out.font = String(get("font"));
+      if (text.size != null) out.size = Number(get("size"));
+      if (text.stroke != null) out.stroke = Number(get("stroke"));
+      if (text.weight != null) out.weight = Number(get("weight"));
+      if (text.uppercase != null) out.uppercase = !!get("uppercase");
+    }
   }
   const f: string[] = [];
   if (v.blur) f.push(`blur(${v.blur}px)`);

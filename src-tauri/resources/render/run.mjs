@@ -3,6 +3,7 @@
 
 import { createReadStream, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
+import { pipeline } from "node:stream";
 import { resolve, sep } from "node:path";
 import { rmSync } from "node:fs";
 import { ensureBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
@@ -34,15 +35,19 @@ function serveProject(root) {
       return void res.writeHead(404).end();
     }
     const type = TYPES[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
+    // Обрыв со стороны браузера закрывает файл, ошибка чтения не роняет рендер.
+    const send = (options) => pipeline(createReadStream(path, options), res, () => {});
     const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? "");
-    if (range) {
-      const start = range[1] ? Number(range[1]) : 0;
-      const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (range && (range[1] || range[2])) {
+      // `bytes=-N` — последние N байт.
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (start >= size || start > end) return void res.writeHead(416, { "Content-Range": `bytes */${size}` }).end();
       res.writeHead(206, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1 });
-      createReadStream(path, { start, end }).pipe(res);
+      send({ start, end });
     } else {
       res.writeHead(200, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": size });
-      createReadStream(path).pipe(res);
+      send({});
     }
   });
   return new Promise((ok) => server.listen(0, "127.0.0.1", () => ok(server)));

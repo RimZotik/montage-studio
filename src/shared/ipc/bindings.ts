@@ -98,6 +98,8 @@ export const commands = {
 	packImport: (path: string) => typedError<Pack, AppError>(__TAURI_INVOKE("pack_import", { path })),
 	toolRun: (id: string, params: Json, clips: string[]) => typedError<ToolOutcome, AppError>(__TAURI_INVOKE("tool_run", { id, params, clips })),
 	effectApply: (id: string, params: Json, clips: string[]) => typedError<string[], AppError>(__TAURI_INVOKE("effect_apply", { id, params, clips })),
+	styleApply: (id: string, lang: string) => typedError<string, AppError>(__TAURI_INVOKE("style_apply", { id, lang })),
+	soundPlace: (id: string, frame: number) => typedError<string, AppError>(__TAURI_INVOKE("sound_place", { id, frame })),
 	exportStatus: () => typedError<ExportStatus, AppError>(__TAURI_INVOKE("export_status")),
 	exportEngineInstall: () => typedError<null, AppError>(__TAURI_INVOKE("export_engine_install")),
 	exportStart: (settings: ExportSettings) => typedError<string, AppError>(__TAURI_INVOKE("export_start", { settings })),
@@ -185,6 +187,7 @@ export type ClipPropsPatch = {
 	y?: number | null,
 	fadeIn?: number | null,
 	fadeOut?: number | null,
+	speed?: number | null,
 	volumeKeys?: ([number, number | null])[] | null,
 };
 
@@ -201,6 +204,8 @@ export type ClipProps_Deserialize = {
 	/**  Плавное появление и исчезновение звука/картинки, кадров. */
 	fadeIn?: number,
 	fadeOut?: number,
+	/**  Скорость воспроизведения файла: 0.5 — вдвое медленнее. */
+	speed?: number | null,
 	/**
 	 *  Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
 	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
@@ -221,6 +226,8 @@ export type ClipProps_Serialize = {
 	/**  Плавное появление и исчезновение звука/картинки, кадров. */
 	fadeIn: number,
 	fadeOut: number,
+	/**  Скорость воспроизведения файла: 0.5 — вдвое медленнее. */
+	speed: number | null,
 	/**
 	 *  Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
 	 *  Кадры файла, а не клипа: разрез и перенос ее не сбивают.
@@ -356,7 +363,7 @@ export type ImportResult = {
 export type Item = {
 	version?: number,
 	id: string,
-	/**  `effect` или `tool`. */
+	/**  `effect`, `tool`, `style` (правила оформления ролика) или `sound` (звук, синтезируется). */
 	kind: string,
 	/**  Строка или `{ru, en}`. */
 	name: any,
@@ -375,6 +382,15 @@ export type Item = {
 	steps?: any,
 	/**  Инструмент `ops`: `selection` — шаблон на каждый выбранный клип, иначе один раз. */
 	each?: string | null,
+	/**  Инструмент `audioProcess`: цепочка обработки звука; значения панели — `$id`. */
+	filter?: string | null,
+	/**  Стиль: текст правил (markdown), строка или `{ru, en}`. */
+	rules?: any,
+	/**  Звук: как его синтезировать. */
+	synth?: string | null,
+	/**  Звук: длительность и где слышен удар, секунд. */
+	seconds?: number | null,
+	hitAt?: number | null,
 	/**  `studio`, `user`, `claude`. */
 	author?: string,
 	/**  Номер правки элемента. */
@@ -437,6 +453,8 @@ export type MediaItem = {
 	probe: Probe | null,
 	/**  Миниатюра (полный путь к jpg в кэше проекта). */
 	thumb: string | null,
+	/**  Облегченная копия для монитора, если файл тяжелый (полный путь). */
+	proxy: string | null,
 };
 
 export type NewProject = {

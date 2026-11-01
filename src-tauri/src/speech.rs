@@ -79,15 +79,30 @@ pub fn phrases(words: &[Word], max_words: usize, max_chars: usize, gap_ms: u32) 
 
 /// Время файла (мс) → кадр таймлайна у этого клипа; `None` — обрезано и не звучит.
 pub fn frame_on_clip(clip: &Clip, ms: u32, fps: u32) -> Option<u32> {
-    let source = (f64::from(ms) * f64::from(fps) / 1000.0).round() as u32;
-    (source >= clip.offset && source < clip.offset + clip.duration).then(|| clip.start + source - clip.offset)
+    let source = (f64::from(ms) * f64::from(fps) / 1000.0).round();
+    let inside = (source - f64::from(clip.offset)) / clip.props.speed;
+    (inside >= 0.0 && inside < f64::from(clip.duration)).then(|| clip.start + inside.round() as u32)
+}
+
+/// Как собирать субтитры.
+pub struct CaptionRules {
+    pub max_words: usize,
+    pub max_chars: usize,
+    /// Слово на экране не меньше, секунд.
+    pub min_hold_s: f64,
+    /// Слова, которые не показывать.
+    pub skip: Vec<String>,
 }
 
 /// Субтитры к клипу: по кадрам таймлайна, без наложений, короткая пауза между соседними закрыта.
-pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, max_words: usize, max_chars: usize, track: &str) -> Vec<Op> {
-    let min = fps / 4;
+pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, track: &str, rules: &CaptionRules) -> Vec<Op> {
+    let CaptionRules { max_words, max_chars, min_hold_s, skip } = rules;
+    let (max_words, max_chars) = (*max_words, *max_chars);
+    let min = ((min_hold_s.max(0.05) * f64::from(fps)) as u32).max(1);
     let hold = fps * 3 / 10;
-    let timed: Vec<(u32, u32, String)> = phrases(words, max_words, max_chars, 700)
+    // Частицы и предлоги можно не показывать: время речи остается у соседних слов.
+    let kept: Vec<Word> = words.iter().filter(|w| !skip.iter().any(|s| s == &w.text.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_owned())).cloned().collect();
+    let timed: Vec<(u32, u32, String)> = phrases(&kept, max_words, max_chars, 700)
         .into_iter()
         .filter_map(|p| {
             let a = frame_on_clip(clip, p.start, fps)?;
@@ -177,12 +192,16 @@ pub fn status_or_start(app: &AppHandle, dir: &Path, rel: &str, language: &str) -
     map.insert(key.clone(), Job::Running(0.0));
     let (app2, file, rel2, lang) = (app.clone(), dir.join(rel), rel.to_owned(), language.to_owned());
     std::thread::spawn(move || {
-        let result = transcribe(&app2, &file, &rel2, &lang, &model, &key).and_then(|t| {
-            if let Some(parent) = cache.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            crate::project::write_atomic(&cache, &serde_json::to_vec(&t).map_err(|e| AppError::new("internal", e.to_string()))?)
-        });
+        // Сбой внутри не оставляет расшифровку «идущей» навсегда.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            transcribe(&app2, &file, &rel2, &lang, &model, &key).and_then(|t| {
+                if let Some(parent) = cache.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                crate::project::write_atomic(&cache, &serde_json::to_vec(&t).map_err(|e| AppError::new("internal", e.to_string()))?)
+            })
+        }))
+        .unwrap_or_else(|_| Err(AppError::new("speechFailed", "internal error")));
         let jobs = app2.state::<SpeechJobs>();
         let mut map = jobs.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         let error = result.err().map(|e| e.message);
@@ -220,7 +239,8 @@ fn transcribe(app: &AppHandle, file: &Path, rel: &str, language: &str, model: &P
     let folder = model.parent().ok_or_else(|| AppError::new("internal", "model path"))?;
     // Пути в параметрах фильтра ломаются на двоеточиях и кириллице — модель и итог рядом, папка
     // запуска — их папка.
-    let out_name = format!("job-{}.json", std::process::id() ^ key.len() as u32 ^ duration.to_bits() as u32);
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let out_name = format!("job-{}-{}.json", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
     let out_file = folder.join(&out_name);
     let _ = std::fs::remove_file(&out_file);
     let filter = format!("whisper=model={}:language={language}:queue=20:format=json:max_len=1:destination={out_name}", crate::components::SPEECH_MODEL);
@@ -283,6 +303,14 @@ mod tests {
     }
 
     #[test]
+    fn slow_clip_stretches_time() {
+        let mut c = clip(100, 100, 30);
+        c.props.speed = 0.5;
+        assert_eq!(frame_on_clip(&c, 2000, 30), Some(160), "секунда файла идет две секунды");
+        assert_eq!(frame_on_clip(&c, 900, 30), None);
+    }
+
+    #[test]
     fn filter_output_is_parsed() {
         let raw = "{\"start\":0,\"end\":130,\"text\":\" Я\"}\n{\"start\":130,\"end\":450,\"text\":\"[Music]\"}\nмусор\n{\"start\":450,\"end\":990,\"text\":\"модель,\"}\n";
         assert_eq!(parse_words(raw), vec![word(0, 130, "Я"), word(450, 990, "модель,")]);
@@ -302,12 +330,21 @@ mod tests {
         // Клип начинается со второй секунды файла (offset 60 при 30 к/с) и стоит с кадра 300.
         let c = clip(300, 90, 60);
         let words = [word(500, 900, "обрезано"), word(2000, 2500, "первое."), word(2600, 3000, "второе."), word(5000, 5300, "конец")];
-        let ops = caption_ops(&c, &words, 30, 3, 30, "s1");
+        let ops = caption_ops(&c, &words, 30, "s1", &CaptionRules { max_words: 3, max_chars: 30, min_hold_s: 0.25, skip: vec![] });
         let got: Vec<(u32, u32, String)> = ops.iter().map(|o| match o { Op::AddClip { start, duration, text, .. } => (*start, *duration, text.clone().unwrap()), _ => panic!() }).collect();
         assert_eq!(got.len(), 2, "слово до начала клипа и слово после конца — не показываются: {got:?}");
         assert_eq!(got[0].0, 300);
         assert_eq!(got[0].0 + got[0].1, got[1].0, "короткая пауза закрыта, без наложения");
         assert_eq!(got[1].2, "второе.");
+    }
+
+    #[test]
+    fn captions_hold_short_words_and_skip_listed() {
+        let c = clip(0, 300, 0);
+        let words = [word(0, 50, "а"), word(100, 150, "да."), word(3000, 3050, "нет.")];
+        let ops = caption_ops(&c, &words, 30, "s1", &CaptionRules { max_words: 1, max_chars: 30, min_hold_s: 0.5, skip: vec!["а".to_owned()] });
+        let got: Vec<(u32, String)> = ops.iter().map(|o| match o { Op::AddClip { duration, text, .. } => (*duration, text.clone().unwrap()), _ => panic!() }).collect();
+        assert_eq!(got, vec![(15, "да.".to_owned()), (15, "нет.".to_owned())], "короткое слово держится, «а» опущено");
     }
 
     #[test]

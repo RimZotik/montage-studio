@@ -168,29 +168,41 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - HEAD - 40) el.scrollLeft = Math.max(0, x - 80);
   }, [frame, zoom]);
 
+  // Видимый участок: на большом таймлайне рисуются только клипы рядом с ним.
+  const [view0, setView0] = useState({ left: 0, width: 4000 });
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const update = () => setView0({ left: el.scrollLeft, width: el.clientWidth });
+    update();
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+  const margin = view0.width;
+  const fromF = Math.floor((view0.left - margin) / zoom);
+  const toF = Math.ceil((view0.left + view0.width + margin) / zoom);
+  const visibleKey = `${Math.floor(fromF / (fps * 5))}:${Math.floor(toF / (fps * 5))}`;
+
   const step = fps * (zoom * fps > 160 ? 1 : zoom * fps > 40 ? 5 : zoom * fps > 12 ? 10 : 30);
   const ticks = [];
   for (let f = 0; f * zoom < width; f += step) ticks.push(f);
 
-  const scrub = (e: React.PointerEvent) => {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    onSeek(frameAt(e.clientX));
-  };
-
-  return (
-    <div className="timeline" ref={scroller} onWheel={onWheel} onPointerMove={onMove} onPointerUp={onUp}>
-      <div className="tl-inner" style={{ width: width + HEAD }}>
-        <div className="tl-ruler" onPointerDown={scrub} onPointerMove={(e) => e.buttons === 1 && !drag && onSeek(frameAt(e.clientX))}>
-          <div className="tl-corner mono">{timecode(frame, fps)}</div>
-          {ticks.map((f) => (
-            <span key={f} className="tick" style={{ left: HEAD + f * zoom }}>
-              {timecode(f, fps).slice(0, 5)}
-            </span>
-          ))}
-          {view.markers.map((m) => (
-            <span key={m.frame} className="marker" style={{ left: HEAD + m.frame * zoom }} title={m.label} />
-          ))}
-        </div>
+  // Клипы не перерисовываются от движения головки: при воспроизведении меняется только она.
+  const [cullFrom, cullTo] = [Math.floor(fromF / (fps * 5)) * fps * 5, (Math.floor(toF / (fps * 5)) + 1) * fps * 5];
+  const lanes = useMemo(
+    () => (
+      <>
         {view.tracks.map((tr) => (
           <div key={tr.id} className={`lane ${tr.kind} ${tr.muted ? "muted" : ""}`} data-track={tr.id} onPointerDown={(e) => e.target === e.currentTarget && onSelect([])}>
             <div className="lhead">
@@ -206,6 +218,8 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
             </div>
             {view.clips
               .filter((c) => (drag?.clip.id === c.id ? drag.track : pending?.id === c.id ? pending.track : c.track) === tr.id)
+              // Вне видимого участка клип не рисуется (кроме того, что сейчас тянут).
+              .filter((c) => c.start + c.duration >= cullFrom && c.start <= cullTo || drag?.clip.id === c.id || selected.includes(c.id))
               .map((c) => {
                 const live = drag?.clip.id === c.id ? drag : pending?.id === c.id ? pending : null;
                 // Связанный с перетаскиваемым: тот же сдвиг (перенос) или те же границы (обрезка).
@@ -240,6 +254,32 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
             )}
           </div>
         ))}
+      </>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [view.tracks, view.clips, drag, pending, selected, zoom, visibleKey, byPath, order, ghost?.track, ghost?.start, ghost?.duration, t],
+  );
+
+  const scrub = (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    onSeek(frameAt(e.clientX));
+  };
+
+  return (
+    <div className="timeline" ref={scroller} onWheel={onWheel} onPointerMove={onMove} onPointerUp={onUp}>
+      <div className="tl-inner" style={{ width: width + HEAD }}>
+        <div className="tl-ruler" onPointerDown={scrub} onPointerMove={(e) => e.buttons === 1 && !drag && onSeek(frameAt(e.clientX))}>
+          <div className="tl-corner mono">{timecode(frame, fps)}</div>
+          {ticks.map((f) => (
+            <span key={f} className="tick" style={{ left: HEAD + f * zoom }}>
+              {timecode(f, fps).slice(0, 5)}
+            </span>
+          ))}
+          {view.markers.map((m) => (
+            <span key={m.frame} className="marker" style={{ left: HEAD + m.frame * zoom }} title={m.label} />
+          ))}
+        </div>
+        {lanes}
         <div className="playhead" style={{ left: HEAD + frame * zoom }} />
       </div>
       {view.clips.length === 0 && <div className="tl-empty">{t("edit.empty")}</div>}

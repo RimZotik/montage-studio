@@ -1,7 +1,7 @@
 import { BookmarkPlus, Captions, Eye, EyeOff, Scissors, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type AppliedEffect, type Clip, type ClipPropsPatch, type Op, type ProjectView, commands as ipc } from "@/shared/ipc/bindings";
+import { type AppError, type AppliedEffect, type Clip, type ClipPropsPatch, type Op, type ProjectView, commands as ipc } from "@/shared/ipc/bindings";
 import { propsOf } from "@/render/TimelineComposition";
 import { ControlPanel, Slider, loc } from "@/shared/ui/ControlPanel";
 import { timecode } from "./time";
@@ -10,13 +10,16 @@ type Full = ReturnType<typeof propsOf>;
 
 /** Эффект на клипе: своя панель управления (копия из библиотеки, ее можно поменять только здесь),
  *  вкл/выкл, удалить, сохранить настройку в библиотеку. */
-function EffectCard({ clip, fx, view, apply, lang }: { clip: Clip; fx: AppliedEffect; view: ProjectView; apply: (ops: Op[], label: string) => Promise<boolean>; lang: string }) {
+function EffectCard({ clip, fx, view, apply, lang, onError }: { clip: Clip; fx: AppliedEffect; view: ProjectView; apply: (ops: Op[], label: string) => Promise<boolean>; lang: string; onError: (e: AppError) => void }) {
   const { t } = useTranslation();
   const name = loc(fx.name, lang) || fx.effect;
   const save = () => {
     const controls = (Array.isArray(fx.controls) ? fx.controls : []).map((c: any) => (c.id && fx.params && c.id in fx.params ? { ...c, default: fx.params[c.id] } : c));
-    const id = `${fx.effect.replace(/-my(-\d+)?$/, "")}-my`;
-    void ipc.librarySave({ version: 1, id, kind: "effect", name: { ru: `${name} (моя настройка)`, en: `${name} (my preset)` }, description: "", targets: [], tags: [], controls, spec: fx.spec, engine: null, builtin: null, steps: null, each: null, author: "user", revision: 1 }, null);
+    // Своя настройка не затирает прошлую: у каждой новый ID.
+    const id = `${fx.effect.replace(/-my-[a-z0-9]+$/, "")}-my-${Date.now().toString(36)}`;
+    const kind = view.tracks.find((tr) => tr.id === clip.track)?.kind;
+    const targets = [kind === "captions" ? "text" : (kind ?? "video")];
+    void ipc.librarySave({ version: 1, id, kind: "effect", name: { ru: `${name} (моя настройка)`, en: `${name} (my preset)` }, description: "", targets, tags: [], controls, spec: fx.spec, engine: null, builtin: null, steps: null, each: null, filter: null, rules: null, synth: null, seconds: null, hitAt: null, author: "user", revision: 1 }, null).then((r) => r.status === "error" && onError(r.error));
   };
   return (
     <div className={`fxapplied ${fx.enabled === false ? "off" : ""}`}>
@@ -39,7 +42,7 @@ function EffectCard({ clip, fx, view, apply, lang }: { clip: Clip; fx: AppliedEf
 
 /** Свойства выбранного клипа: время, громкость, прозрачность, масштаб, сдвиг, плавность; текст
  *  субтитра. Пусто — подсказки и «Субтитр в точке». */
-export function Inspector({ view, clip, frame, apply }: { view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean> }) {
+export function Inspector({ view, clip, frame, apply, onError }: { view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean>; onError: (e: AppError) => void }) {
   const { t, i18n } = useTranslation();
   const fps = view.project.sequence.fps;
   const [text, setText] = useState(clip?.text ?? "");
@@ -97,11 +100,12 @@ export function Inspector({ view, clip, frame, apply }: { view: ProjectView; cli
           <Slider label="Y" value={p.y} min={-view.project.sequence.height} max={view.project.sequence.height} step={1} unit=" px" onCommit={(y) => set({ y })} />
         </>
       )}
+      {audible && <Slider label={t("edit.speed")} value={p.speed} min={0.1} max={4} step={0.05} unit="%" scale={100} onCommit={(speed) => set({ speed })} />}
       <Slider label={t("edit.fadeIn")} value={p.fadeIn} min={0} max={Math.min(fps * 3, clip.duration)} step={1} unit={` ${t("edit.fr")}`} onCommit={(fadeIn) => set({ fadeIn })} />
       <Slider label={t("edit.fadeOut")} value={p.fadeOut} min={0} max={Math.min(fps * 3, clip.duration)} step={1} unit={` ${t("edit.fr")}`} onCommit={(fadeOut) => set({ fadeOut })} />
       {track?.kind === "audio" && <Slider label={t("edit.trackVolume", { name: track.name })} value={track.volume ?? 1} min={0} max={2} step={0.01} unit="%" scale={100} onCommit={(volume) => void apply([{ op: "setTrack", id: track.id, muted: null, locked: null, volume }], "track")} />}
       {!!clip.effects?.length && <div className="ctlsec">{t("library.applied")}</div>}
-      {clip.effects?.map((fx) => <EffectCard key={fx.id} clip={clip} fx={fx} view={view} apply={apply} lang={i18n.language} />)}
+      {clip.effects?.map((fx) => <EffectCard key={fx.id} clip={clip} fx={fx} view={view} apply={apply} lang={i18n.language} onError={onError} />)}
       <div className="ibtns">
         <button className="btn" disabled={frame <= clip.start || frame >= clip.start + clip.duration} onClick={() => void apply([{ op: "splitClip", id: clip.id, at: frame }], "split")}>
           <Scissors size={14} strokeWidth={1.75} />

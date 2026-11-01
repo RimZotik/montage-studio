@@ -63,6 +63,9 @@ pub struct ClipProps {
     pub fade_in: u32,
     #[serde(default)]
     pub fade_out: u32,
+    /// Скорость воспроизведения файла: 0.5 — вдвое медленнее.
+    #[serde(default = "one")]
+    pub speed: f64,
     /// Огибающая громкости: пары «кадр файла, множитель» по возрастанию; между ними — плавно.
     /// Кадры файла, а не клипа: разрез и перенос ее не сбивают.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -80,6 +83,7 @@ pub struct ClipPropsPatch {
     pub y: Option<f64>,
     pub fade_in: Option<u32>,
     pub fade_out: Option<u32>,
+    pub speed: Option<f64>,
     pub volume_keys: Option<Vec<(u32, f64)>>,
 }
 
@@ -92,6 +96,7 @@ impl ClipProps {
         self.y = p.y.unwrap_or(self.y);
         self.fade_in = p.fade_in.unwrap_or(self.fade_in);
         self.fade_out = p.fade_out.unwrap_or(self.fade_out);
+        self.speed = p.speed.unwrap_or(self.speed);
         if let Some(k) = &p.volume_keys {
             self.volume_keys.clone_from(k);
         }
@@ -142,7 +147,7 @@ fn one() -> f64 {
 
 impl Default for ClipProps {
     fn default() -> Self {
-        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0, volume_keys: vec![] }
+        Self { volume: 1.0, opacity: 1.0, scale: 1.0, x: 0.0, y: 0.0, fade_in: 0, fade_out: 0, speed: 1.0, volume_keys: vec![] }
     }
 }
 
@@ -372,7 +377,7 @@ impl Edit<'_> {
                     right.start = *at;
                     right.duration = c.duration - left;
                     if c.kind == ClipKind::Media {
-                        right.offset = c.offset + left;
+                        right.offset = c.offset + (f64::from(left) * c.props.speed).round() as u32;
                     }
                     right.props.fade_in = 0;
                     drop_anchor(&mut right.effects, "start");
@@ -503,6 +508,9 @@ pub fn validate(tracks: &[Track], clips: &[Clip]) -> AppResult<()> {
         if !(0.0..=2.0).contains(&p.volume) || !(0.0..=1.0).contains(&p.opacity) || !(0.01..=20.0).contains(&p.scale) {
             return Err(bad(format!("clip {} props out of range", c.id)));
         }
+        if !(0.1..=8.0).contains(&p.speed) {
+            return Err(bad(format!("clip {} speed out of range", c.id)));
+        }
         if p.volume_keys.iter().any(|k| !(0.0..=2.0).contains(&k.1)) || p.volume_keys.windows(2).any(|w| w[0].0 >= w[1].0) {
             return Err(bad(format!("clip {} volume keys", c.id)));
         }
@@ -584,6 +592,13 @@ mod tests {
         let (_, clips, r) = run(&[media("v1", 0, 60), media("v1", 100, 60), Op::MoveClip { id: "c1".into(), track: None, start: 120 }]);
         r.unwrap();
         assert_eq!(clips.last().unwrap().id, "c1", "перенесенный — сверху");
+    }
+
+    #[test]
+    fn split_respects_speed() {
+        let (_, clips, r) = run(&[media("v1", 0, 100), Op::SetProps { id: "c1".into(), props: ClipPropsPatch { speed: Some(0.5), ..Default::default() } }, Op::SplitClip { id: "c1".into(), at: 40 }]);
+        r.unwrap();
+        assert_eq!(clips.iter().find(|c| c.id != "c1").unwrap().offset, 20, "40 кадров таймлайна — 20 кадров файла");
     }
 
     #[test]

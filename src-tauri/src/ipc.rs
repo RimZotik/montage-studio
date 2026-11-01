@@ -58,6 +58,8 @@ pub fn builder() -> Builder<tauri::Wry> {
         library::pack_import,
         presets::tool_run,
         presets::effect_apply,
+        presets::style_apply,
+        presets::sound_place,
         export::export_status,
         export::export_engine_install,
         export::export_start,

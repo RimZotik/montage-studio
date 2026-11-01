@@ -511,3 +511,5 @@ input { font: inherit; color: inherit; }
 .explay { max-height: 56vh; max-width: 100%; align-self: flex-start; background: #000; border-radius: 8px; }
 .exfile { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
 .exname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
+.librules { font: 11.5px/1.45 var(--font); white-space: pre-wrap; user-select: text; margin: 0; padding: 8px; background: var(--bar); border-radius: 8px; color: var(--muted); }
+.btn.danger { border-color: var(--danger); color: var(--danger); }

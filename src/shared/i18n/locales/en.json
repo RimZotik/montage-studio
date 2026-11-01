@@ -144,7 +144,13 @@
     "overlap": "Clips on one track cannot overlap.",
     "invalidEdit": "This edit does not fit.",
     "trackLocked": "The track is locked.",
-    "nothingToUndo": "The last change was not made by Claude."
+    "nothingToUndo": "The last change was not made by Claude.",
+    "timelineChanged": "The timeline changed while the tool was working: run it again",
+    "toolFailed": "The tool could not run: select suitable clips and check the tracks",
+    "renderEngineMissing": "The render engine is not installed: install it on the Export page",
+    "emptyTimeline": "The timeline has no clips",
+    "exportBusy": "An export is already running",
+    "packReadonly": "The base pack cannot be changed: save a copy"
   },
   "install": {
     "install": "Install · {{mb}} MB",
@@ -340,7 +346,8 @@
       "media": "Media",
       "effects": "Effects"
     },
-    "trackVolume": "Track {{name}}"
+    "trackVolume": "Track {{name}}",
+    "speed": "Speed"
   },
   "crash": {
     "title": "The page did not open",
@@ -378,7 +385,9 @@
     "modelInstall": "Download the model",
     "kind": {
       "effect": "effect",
-      "tool": "tool"
+      "tool": "tool",
+      "style": "style",
+      "sound": "sound"
     },
     "author": {
       "studio": "studio",
@@ -391,7 +400,9 @@
       "video": "Video",
       "audio": "Sound",
       "text": "Text",
-      "transition": "Transitions"
+      "transition": "Transitions",
+      "sound": "Sounds",
+      "style": "Styles"
     },
     "target": {
       "video": "Video",
@@ -399,7 +410,10 @@
       "text": "Text",
       "sequence": "Whole sequence",
       "transition": "Transition"
-    }
+    },
+    "soundAdded": "Sound placed at the playhead",
+    "styleApplied": "Style added to the project rules: Claude follows it from the next message",
+    "deleteSure": "Delete with its history?"
   },
   "export": {
     "title": "Export the video",

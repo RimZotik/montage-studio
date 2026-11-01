@@ -36,7 +36,8 @@
         "scope": [
           "**/media/**",
           "**/.studio/cache/thumbs/*",
-          "**/output/*"
+          "**/output/*",
+          "**/.studio/cache/proxy/*"
         ]
       }
     }

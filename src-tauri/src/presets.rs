@@ -145,6 +145,10 @@ pub fn apply_cuts(e: &mut Edit<'_>, clip_id: &str, cuts: &[(u32, u32)]) -> AppRe
     let captions: Vec<String> = e.tracks.iter().filter(|t| t.kind == TrackKind::Captions).map(|t| t.id.clone()).collect();
     for &(a, b) in cuts.iter().rev() {
         let c = e.clips.iter().find(|c| c.id == clip_id).ok_or_else(|| bad("clip disappeared"))?.clone();
+        // Клип целиком тихий: не трогать, остальные клипы все равно обрабатываются.
+        if a <= c.start && b >= c.end() {
+            continue;
+        }
         let mut target = clip_id.to_owned();
         if b < c.end() {
             e.apply(&Op::SplitClip { id: clip_id.to_owned(), at: b })?;
@@ -154,10 +158,6 @@ pub fn apply_cuts(e: &mut Edit<'_>, clip_id: &str, cuts: &[(u32, u32)]) -> AppRe
             target = right.into_iter().next().ok_or_else(|| bad("split gave nothing"))?;
         }
         let moved: Vec<(String, u32)> = e.clips.iter().filter(|x| captions.contains(&x.track) && x.start >= b).map(|x| (x.id.clone(), x.start - (b - a))).collect();
-        let whole = a <= c.start && b >= c.end();
-        if whole {
-            return Err(bad("the whole clip is silent"));
-        }
         e.apply(&Op::DeleteClips { ids: vec![target], ripple: true })?;
         for (id, start) in moved {
             if let Some(x) = e.clips.iter_mut().find(|x| x.id == id) {
@@ -195,6 +195,10 @@ pub fn duck_keys(speech: &[(u32, u32)], clip: &Clip, gain: f64, attack: u32, rel
         keys.push((local(a).max(down + 1), gain));
         keys.push((local(b).max(down + 2), gain));
         keys.push((local(b + i64::from(release)).max(down + 3), 1.0));
+    }
+    // Нулевой спад или возврат не дает ключей с одним кадром: кадры строго растут.
+    for i in 1..keys.len() {
+        keys[i].0 = keys[i].0.max(keys[i - 1].0 + 1);
     }
     keys
 }
@@ -285,6 +289,22 @@ fn commit(app: &AppHandle, label: &str, change: impl FnOnce(&mut Edit<'_>) -> Ap
     Ok(())
 }
 
+/// Применить план: анализ мог занять минуты, и если таймлайн за это время изменился, план уже
+/// неверен — лучше отказать, чем резать по старым кадрам.
+fn commit_from(c: &Ctx<'_>, change: impl FnOnce(&mut Edit<'_>) -> AppResult<()>) -> AppResult<()> {
+    let state = c.app.state::<ProjectState>();
+    let view = state.edit(c.label, |doc| {
+        if doc.timeline != c.doc.timeline {
+            return Err(AppError::new("timelineChanged", "the timeline changed while the tool was working: run it again"));
+        }
+        let t = &mut doc.timeline;
+        let mut e = Edit { tracks: &mut t.tracks, clips: &mut t.clips, markers: &mut t.markers };
+        change(&mut e)
+    })?;
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri_specta::Event::emit(&ProjectChanged(Some(view)), c.app)));
+    Ok(())
+}
+
 struct Ctx<'a> {
     app: &'a AppHandle,
     dir: &'a Path,
@@ -346,7 +366,7 @@ fn beat_cut(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
     let adds = beat_clips(&segments, &sources, c.p["shuffle"].as_bool().unwrap_or(false), &track);
     let hit = c.text("hit").filter(|h| *h != "none").and_then(|h| effect_copy(c.app, h));
     let count = adds.len();
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         e.apply(&Op::DeleteClips { ids, ripple: false })?;
         for op in &adds {
             for id in e.apply(op)? {
@@ -389,7 +409,7 @@ fn remove_silence(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
     let frames: u32 = plan.iter().flat_map(|(_, cuts)| cuts.iter().map(|(a, b)| b - a)).sum();
     let count: usize = plan.iter().map(|(_, cuts)| cuts.len()).sum();
     let only_mark = c.p["markersOnly"].as_bool().unwrap_or(false);
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         for (id, cuts) in &plan {
             if only_mark {
                 for (a, _) in cuts {
@@ -413,6 +433,15 @@ fn captions(c: &Ctx<'_>, wait: Duration) -> AppResult<ToolOutcome> {
     let language = c.text("language").unwrap_or("auto");
     let track = c.text("track").map_or_else(|| c.doc.timeline.tracks.iter().find(|t| t.kind == TrackKind::Captions).map(|t| t.id.clone()), |t| Some(t.to_owned())).ok_or_else(|| bad("no captions track"))?;
     let (words, chars) = (num(c.p, "maxWords", 4.0) as usize, num(c.p, "maxChars", 28.0) as usize);
+    let rules = speech::CaptionRules {
+        max_words: words,
+        max_chars: chars,
+        min_hold_s: num(c.p, "minHold", 0.3),
+        skip: c.text("skipWords").unwrap_or("").split(',').map(|w| w.trim().to_lowercase()).filter(|w| !w.is_empty()).collect(),
+    };
+    let anim = c.text("animation").unwrap_or("none").to_owned();
+    let style = c.text("styleEffect").filter(|s| *s != "none").and_then(|s| effect_copy(c.app, s));
+    let looks: Vec<AppliedEffect> = if anim == "mix" { ["text-pop", "text-fly", "text-rise", "text-hit"].iter().filter_map(|n| effect_copy(c.app, n)).collect() } else { effect_copy(c.app, &anim).into_iter().collect() };
     let mut adds = Vec::new();
     let mut seen = Vec::new();
     for x in clips {
@@ -427,20 +456,27 @@ fn captions(c: &Ctx<'_>, wait: Duration) -> AppResult<ToolOutcome> {
         match speech::wait(c.app, c.dir, src, language, wait)? {
             speech::Status::NoModel => return Ok(ToolOutcome { status: "needsSpeechModel".into(), changed: 0, progress: 0.0, note: "speech model is not installed".into() }),
             speech::Status::Running(p) => return Ok(ToolOutcome { status: "pending".into(), changed: 0, progress: p, note: format!("transcribing {src}: {:.0}%, run again in a minute", p * 100.0) }),
-            speech::Status::Ready(t) => adds.extend(speech::caption_ops(x, &t.words, c.fps, words, chars, &track)),
+            speech::Status::Ready(t) => adds.extend(speech::caption_ops(x, &t.words, c.fps, &track, &rules)),
         }
     }
     let count = adds.len();
     let replace = c.p["replace"].as_bool().unwrap_or(true);
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         if replace {
             let old: Vec<String> = e.clips.iter().filter(|x| x.track == track).map(|x| x.id.clone()).collect();
             if !old.is_empty() {
                 e.apply(&Op::DeleteClips { ids: old, ripple: false })?;
             }
         }
-        for op in &adds {
-            e.apply(op)?;
+        for (n, op) in adds.iter().enumerate() {
+            for id in e.apply(op)? {
+                if let Some(fx) = &style {
+                    e.apply(&Op::AddEffect { clip: id.clone(), effect: fx.clone() })?;
+                }
+                if !looks.is_empty() {
+                    e.apply(&Op::AddEffect { clip: id, effect: looks[n % looks.len()].clone() })?;
+                }
+            }
         }
         Ok(())
     })?;
@@ -469,7 +505,7 @@ fn normalize(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
         ops.push(Op::SetProps { id: x.id.clone(), props: ClipPropsPatch { volume: Some(gain.min(2.0)), ..ClipPropsPatch::default() } });
     }
     let count = ops.len();
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         for op in &ops {
             e.apply(op)?;
         }
@@ -511,13 +547,249 @@ fn duck(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
     let (attack, release) = (secs_to_frames(num(c.p, "attack", 0.15), c.fps), secs_to_frames(num(c.p, "release", 0.4), c.fps));
     let ops: Vec<Op> = music.iter().map(|m| Op::SetProps { id: m.id.clone(), props: ClipPropsPatch { volume_keys: Some(duck_keys(&speech_frames, m, gain, attack, release)), ..ClipPropsPatch::default() } }).collect();
     let count = ops.len();
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         for op in &ops {
             e.apply(op)?;
         }
         Ok(())
     })?;
     Ok(done(count, format!("music lowered under {} speech parts", speech_frames.len())))
+}
+
+/// Обработка звука: новый файл рядом с исходным, клипы переводятся на него; исходник цел, отмена
+/// возвращает прежний файл. Повторный запуск с теми же значениями берет готовое.
+fn audio_process(c: &Ctx<'_>, item: &Item) -> AppResult<ToolOutcome> {
+    use std::hash::{Hash, Hasher};
+    let chain = library::fill_chain(item.filter.as_deref().ok_or_else(|| bad("no filter"))?, c.p)?;
+    let audible = |x: &Clip| x.kind == ClipKind::Media && x.src.as_deref().is_some_and(|s| !is_image(s)) && track_kind(c.doc, &x.track) == Some(TrackKind::Audio);
+    let clips = targets(c.doc, c.ids, c.text("track").or(Some("a1")), audible);
+    if clips.is_empty() {
+        return Err(bad("no clips with sound on an audio track"));
+    }
+    let mut made: HashMap<String, String> = HashMap::new();
+    for x in &clips {
+        let Some(src) = x.src.as_deref() else { continue };
+        if made.contains_key(src) {
+            continue;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (src, &chain).hash(&mut h);
+        let stem = src.rsplit('/').next().unwrap_or("audio").rsplit_once('.').map_or("audio", |x| x.0);
+        let category = src.split('/').nth(1).filter(|f| *f != "footage" && *f != "images").unwrap_or("voice");
+        let rel = format!("media/{category}/{stem}-{}-{:04x}.wav", item.id, h.finish() & 0xffff);
+        let out = c.file(&rel);
+        if !out.is_file() {
+            std::fs::create_dir_all(out.parent().unwrap_or(c.dir))?;
+            let tmp = out.with_extension("tmp.wav");
+            let mut cmd = std::process::Command::new(&c.ffmpeg);
+            cmd.args(["-v", "error", "-y", "-i"]).arg(c.file(src)).args(["-vn", "-af", &chain, "-ar", "48000", "-c:a", "pcm_s16le"]).arg(&tmp);
+            let done_ok = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()))?;
+            if !done_ok.status.success() {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(bad(String::from_utf8_lossy(&done_ok.stderr).lines().last().unwrap_or("ffmpeg failed").to_owned()));
+            }
+            std::fs::rename(&tmp, &out)?;
+        }
+        made.insert(src.to_owned(), rel);
+    }
+    let change: Vec<(String, String)> = clips.iter().filter_map(|x| Some((x.id.clone(), made.get(x.src.as_deref()?)?.clone()))).collect();
+    let count = change.len();
+    commit_from(c, |e| {
+        for (id, rel) in &change {
+            if let Some(x) = e.clips.iter_mut().find(|x| &x.id == id) {
+                x.src = Some(rel.clone());
+            }
+        }
+        Ok(())
+    })?;
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri_specta::Event::emit(&crate::media::MediaChanged, c.app)));
+    Ok(done(count, format!("{count} clips use processed sound")))
+}
+
+/// Файл звука из библиотеки: синтезируется один раз в `media/sfx/`. Итог — путь и длина, секунд.
+pub fn sound_file(app: &AppHandle, dir: &Path, item: &Item) -> AppResult<(String, f64)> {
+    let seconds = item.seconds.ok_or_else(|| bad("sound without length"))?;
+    let rel = format!("media/sfx/{}.wav", item.id);
+    let out = dir.join(&rel);
+    if !out.is_file() {
+        let ffmpeg = find(app, ToolId::Ffmpeg).ok_or_else(|| AppError::new("ffmpegMissing", "ffmpeg not found"))?;
+        std::fs::create_dir_all(out.parent().unwrap_or(dir))?;
+        let tmp = out.with_extension("tmp.wav");
+        let mut cmd = std::process::Command::new(ffmpeg);
+        cmd.args(["-v", "error", "-y", "-f", "lavfi", "-i", item.synth.as_deref().unwrap_or("")]).args(["-t", &seconds.to_string(), "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le"]).arg(&tmp);
+        let r = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()))?;
+        if !r.status.success() {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(bad(String::from_utf8_lossy(&r.stderr).lines().last().unwrap_or("synth failed").to_owned()));
+        }
+        std::fs::rename(&tmp, &out)?;
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri_specta::Event::emit(&crate::media::MediaChanged, app)));
+    }
+    Ok((rel, seconds))
+}
+
+/// Поставить звук библиотеки на таймлайн так, чтобы его удар пришелся на кадр `frame`.
+pub fn sound_add(app: &AppHandle, id: &str, frame: u32, track: Option<&str>, volume: Option<f64>, label: &str) -> AppResult<String> {
+    let root = library::root_of(app)?;
+    let (item, _) = library::find(&root, id).filter(|(i, _)| i.kind == "sound").ok_or_else(|| bad(format!("sound {id} not found")))?;
+    let (dir, doc) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let (rel, seconds) = sound_file(app, &dir, &item)?;
+    let fps = doc.project.sequence.fps;
+    let track = track.map_or_else(|| sfx_track(&doc), str::to_owned);
+    let start = frame.saturating_sub(secs_to_frames(item.hit_at.unwrap_or(0.0), fps));
+    let mut made = String::new();
+    commit(app, label, |e| {
+        made = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: Some(rel.clone()), text: None, start, duration: secs_to_frames(seconds, fps).max(1), offset: None })?.into_iter().next().unwrap_or_default();
+        if let Some(v) = volume {
+            e.apply(&Op::SetProps { id: made.clone(), props: ClipPropsPatch { volume: Some(v), ..ClipPropsPatch::default() } })?;
+        }
+        Ok(())
+    })?;
+    library::bump(&app.state::<Db>(), id);
+    Ok(made)
+}
+
+/// Дорожка для звуков: последняя звуковая.
+fn sfx_track(doc: &Snapshot) -> String {
+    doc.timeline.tracks.iter().rev().find(|t| t.kind == TrackKind::Audio).map_or_else(|| "a3".into(), |t| t.id.clone())
+}
+
+/// Кадры склеек дорожки: начала клипов, кроме самого первого.
+pub fn cut_frames(clips: &[&Clip]) -> Vec<u32> {
+    let mut f: Vec<u32> = clips.iter().map(|c| c.start).collect();
+    f.sort_unstable();
+    f.dedup();
+    let first = f.first().copied();
+    f.retain(|x| Some(*x) != first);
+    f
+}
+
+/// Звуки на склейках: переходы соответствуют звукам. Разные звуки по кругу, высокий — изредка.
+fn cut_sounds(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
+    let visual = |x: &Clip| track_kind(c.doc, &x.track) == Some(TrackKind::Video);
+    let first_video = c.doc.timeline.tracks.iter().rev().find(|t| t.kind == TrackKind::Video && c.doc.timeline.clips.iter().any(|x| x.track == t.id));
+    let clips = targets(c.doc, c.ids, c.text("source").or(first_video.map(|t| t.id.as_str())), visual);
+    if clips.len() < 2 {
+        return Err(bad("no cuts: at least two clips are needed"));
+    }
+    let root = library::root_of(c.app)?;
+    let names: Vec<&str> = c.text("sounds").unwrap_or("whoosh-low,whoosh-dull,whoosh-soft").split(',').map(str::trim).collect();
+    let mut sounds = Vec::new();
+    for n in &names {
+        let (item, _) = library::find(&root, n).filter(|(i, _)| i.kind == "sound").ok_or_else(|| bad(format!("sound {n} not found")))?;
+        let (rel, seconds) = sound_file(c.app, c.dir, &item)?;
+        sounds.push((rel, secs_to_frames(seconds, c.fps).max(1), secs_to_frames(item.hit_at.unwrap_or(0.0), c.fps)));
+    }
+    let track = c.text("track").map_or_else(|| sfx_track(c.doc), str::to_owned);
+    let every = num(c.p, "every", 1.0).max(1.0) as usize;
+    let volume = num(c.p, "volume", 0.5);
+    let cuts: Vec<u32> = cut_frames(&clips).into_iter().step_by(every).collect();
+    let count = cuts.len();
+    commit_from(c, |e| {
+        for (n, at) in cuts.iter().enumerate() {
+            let (rel, len, hit) = &sounds[n % sounds.len()];
+            let id = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: Some(rel.clone()), text: None, start: at.saturating_sub(*hit), duration: *len, offset: None })?;
+            if let Some(id) = id.into_iter().next() {
+                e.apply(&Op::SetProps { id, props: ClipPropsPatch { volume: Some(volume), ..ClipPropsPatch::default() } })?;
+            }
+        }
+        Ok(())
+    })?;
+    Ok(done(count, format!("{count} sounds on cuts, track {track}")))
+}
+
+/// Петля: начало ролика (`n` кадров) уходит в конец. Последний кадр теперь подходит к первому, а
+/// длина прежняя: зритель не видит, где ролик начался заново.
+pub fn loop_track(e: &mut Edit<'_>, track: &str, n: u32, fade: u32) -> AppResult<bool> {
+    let mut own: Vec<Clip> = e.clips.iter().filter(|c| c.track == track).cloned().collect();
+    own.sort_by_key(|c| c.start);
+    let Some(first) = own.first().filter(|c| c.start == 0 && c.duration > n && c.kind == ClipKind::Media) else { return Ok(false) };
+    let total = own.iter().map(Clip::end).max().unwrap_or(0);
+    let head_offset = first.offset;
+    let speed = first.props.speed;
+    let consumed = (f64::from(n) * speed).round() as u32;
+    let tail = Clip { id: String::new(), start: total - n, duration: n, offset: head_offset, link: None, effects: vec![], props: crate::project::timeline::ClipProps { fade_in: fade, volume: first.props.volume, speed, scale: first.props.scale, x: first.props.x, y: first.props.y, ..crate::project::timeline::ClipProps::default() }, ..first.clone() };
+    for c in e.clips.iter_mut().filter(|c| c.track == track) {
+        if c.id == own[0].id {
+            c.offset += consumed;
+            c.duration -= n;
+            c.props.fade_in = 0;
+        } else {
+            c.start -= n;
+        }
+    }
+    let ids = e.apply(&Op::AddClip { track: track.to_owned(), kind: ClipKind::Media, src: tail.src.clone(), text: None, start: tail.start, duration: n, offset: Some(tail.offset) })?;
+    if let Some(x) = ids.first().and_then(|id| e.clips.iter_mut().find(|c| &c.id == id)) {
+        x.props = tail.props;
+    }
+    Ok(true)
+}
+
+fn loop_end(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
+    let n = secs_to_frames(num(c.p, "seconds", 1.0), c.fps).max(1);
+    let fade = secs_to_frames(num(c.p, "fade", 0.1), c.fps);
+    let mut tracks: Vec<String> = c.doc.timeline.tracks.iter().filter(|t| t.kind == TrackKind::Video).map(|t| t.id.clone()).collect();
+    if let Some(m) = c.text("musicTrack") {
+        tracks.push(m.to_owned());
+    }
+    // Звук, связанный с картинкой, идет вместе с ней.
+    for x in &c.doc.timeline.clips {
+        if x.link.is_some() && track_kind(c.doc, &x.track) == Some(TrackKind::Audio) && c.doc.timeline.clips.iter().any(|v| v.link == x.link && tracks.contains(&v.track)) && !tracks.contains(&x.track) {
+            tracks.push(x.track.clone());
+        }
+    }
+    let mut changed = 0;
+    commit_from(c, |e| {
+        for t in &tracks {
+            if loop_track(e, t, n, fade)? {
+                changed += 1;
+            }
+        }
+        Ok(())
+    })?;
+    if changed == 0 {
+        return Err(bad("nothing to loop: a track must start at frame 0 with a media clip longer than the loop"));
+    }
+    Ok(done(changed, format!("{changed} tracks looped: the first {:.2} s moved to the end", f64::from(n) / f64::from(c.fps))))
+}
+
+/// Размытый дубль под клипом: вертикальный кадр заполнен, даже если футаж другой формы.
+fn blur_background(c: &Ctx<'_>) -> AppResult<ToolOutcome> {
+    let visual = |x: &Clip| x.kind == ClipKind::Media && track_kind(c.doc, &x.track) == Some(TrackKind::Video);
+    let clips = targets(c.doc, c.ids, None, visual);
+    if clips.is_empty() {
+        return Err(bad("select clips on a video track"));
+    }
+    let videos: Vec<&str> = c.doc.timeline.tracks.iter().filter(|t| t.kind == TrackKind::Video).map(|t| t.id.as_str()).collect();
+    let (blur, scale) = (num(c.p, "blur", 40.0), num(c.p, "scale", 1.3));
+    let plan: Vec<(Clip, String)> = clips
+        .iter()
+        .map(|x| {
+            // Следующая дорожка вниз; если ее нет — та же: дубль кладется под клип по порядку.
+            let at = videos.iter().position(|t| *t == x.track).unwrap_or(0);
+            ((*x).clone(), videos.get(at + 1).copied().unwrap_or(x.track.as_str()).to_owned())
+        })
+        .collect();
+    let count = plan.len();
+    let fx = effect_copy(c.app, "blur");
+    commit_from(c, |e| {
+        for (x, track) in &plan {
+            let ids = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: x.src.clone(), text: None, start: x.start, duration: x.duration, offset: Some(x.offset) })?;
+            let Some(id) = ids.into_iter().next() else { continue };
+            e.apply(&Op::SetProps { id: id.clone(), props: ClipPropsPatch { scale: Some(scale), volume: Some(0.0), speed: Some(x.props.speed), ..ClipPropsPatch::default() } })?;
+            if let Some(mut f) = fx.clone() {
+                f.params = json!({ "amount": blur });
+                e.apply(&Op::AddEffect { clip: id.clone(), effect: f })?;
+            }
+            // Дубль под оригиналом, если он на той же дорожке.
+            let at = e.clips.iter().position(|c| c.id == id).unwrap_or(0);
+            let dup = e.clips.remove(at);
+            let under = e.clips.iter().position(|c| c.id == x.id).unwrap_or(0);
+            e.clips.insert(under, dup);
+        }
+        Ok(())
+    })?;
+    Ok(done(count, format!("{count} blurred backgrounds")))
 }
 
 /// Инструмент-шаблон: операции таймлайна с подстановкой значений панели и свойств клипа.
@@ -553,7 +825,7 @@ fn run_steps(c: &Ctx<'_>, item: &Item) -> AppResult<ToolOutcome> {
         }
     }
     let count = plan.len();
-    commit(c.app, c.label, |e| {
+    commit_from(c, |e| {
         for (raw, fx) in &plan {
             let op = match fx {
                 Some(effect) => Op::AddEffect { clip: raw["clip"].as_str().unwrap_or("").to_owned(), effect: effect.clone() },
@@ -586,6 +858,10 @@ pub fn run(app: &AppHandle, id: &str, params: &Value, clips: &[String], label: &
         (_, Some("captionsFromSpeech")) => captions(&c, wait),
         (_, Some("normalize")) => normalize(&c),
         (_, Some("duck")) => duck(&c),
+        (_, Some("audioProcess")) => audio_process(&c, &item),
+        (_, Some("cutSounds")) => cut_sounds(&c),
+        (_, Some("loopEnd")) => loop_end(&c),
+        (_, Some("blurBackground")) => blur_background(&c),
         _ => Err(bad(format!("{id}: unknown engine"))),
     }?;
     if result.status == "done" {
@@ -594,6 +870,32 @@ pub fn run(app: &AppHandle, id: &str, params: &Value, clips: &[String], label: &
     }
     log::info!("tool {id}: {} ({})", result.status, result.note);
     Ok(result)
+}
+
+/// Стиль библиотеки → в правила проекта (`rules/style.md`): свой блок заменяется, текст пользователя
+/// вне блока не трогается. Правила попадают в контекст Claude со следующего сообщения.
+pub fn style_block(current: &str, id: &str, text: &str) -> String {
+    const OPEN: &str = "<!-- studio-style:";
+    const CLOSE: &str = "<!-- /studio-style -->";
+    let block = format!("{OPEN} {id} -->\n{}\n{CLOSE}", text.trim());
+    match (current.find(OPEN), current.find(CLOSE)) {
+        (Some(a), Some(b)) if a < b => format!("{}{block}{}", &current[..a], &current[b + CLOSE.len()..]),
+        _ if current.trim().is_empty() => format!("{block}\n"),
+        _ => format!("{}\n\n{block}\n", current.trim_end()),
+    }
+}
+
+pub fn style_apply_to_project(app: &AppHandle, id: &str, lang: &str) -> AppResult<String> {
+    let root = library::root_of(app)?;
+    let (item, _) = library::find(&root, id).filter(|(i, _)| i.kind == "style").ok_or_else(|| bad(format!("style {id} not found")))?;
+    let (dir, _) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let text = item.rules.get(lang).or_else(|| item.rules.get("ru")).or_else(|| item.rules.get("en")).unwrap_or(&item.rules).as_str().unwrap_or("").to_owned();
+    let file = dir.join("rules/style.md");
+    std::fs::create_dir_all(dir.join("rules"))?;
+    let current = std::fs::read_to_string(&file).unwrap_or_default();
+    crate::project::write_atomic(&file, style_block(&current, id, &text).as_bytes())?;
+    library::bump(&app.state::<Db>(), id);
+    Ok("rules/style.md".into())
 }
 
 /// Наложить эффект библиотеки на клипы одним шагом отмены.
@@ -625,6 +927,18 @@ pub fn apply_effect(app: &AppHandle, id: &str, params: &Value, clips: &[String],
 pub async fn tool_run(app: AppHandle, id: String, params: Json, clips: Vec<String>) -> AppResult<ToolOutcome> {
     let label = format!("tool:{id}");
     tauri::async_runtime::spawn_blocking(move || run(&app, &id, &params.0, &clips, &label, Duration::from_secs(1800))).await.map_err(|e| AppError::new("internal", e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn style_apply(app: AppHandle, id: String, lang: String) -> AppResult<String> {
+    style_apply_to_project(&app, &id, &lang)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn sound_place(app: AppHandle, id: String, frame: u32) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, frame, None, None, "sound")).await.map_err(|e| AppError::new("internal", e.to_string()))?
 }
 
 #[tauri::command]
@@ -716,6 +1030,55 @@ mod tests {
         assert_eq!(keys[3], (820, 1.0));
         assert!(keys.windows(2).all(|w| w[0].0 < w[1].0), "по возрастанию");
         assert!(duck_keys(&[(0, 50)], &c, 0.25, 10, 20).is_empty(), "речь вне клипа");
+    }
+
+    #[test]
+    fn looping_moves_the_head_to_the_end() {
+        let mut tracks: Vec<Track> = default_tracks();
+        let mut markers: Vec<Marker> = vec![];
+        let mut clips = vec![clip("c1", "v1", 0, 100, 10), clip("c2", "v1", 100, 100, 0)];
+        let mut e = Edit { tracks: &mut tracks, clips: &mut clips, markers: &mut markers };
+        assert!(loop_track(&mut e, "v1", 30, 6).unwrap());
+        assert!(!loop_track(&mut e, "a1", 30, 6).unwrap(), "пустая дорожка");
+        let c1 = clips.iter().find(|c| c.id == "c1").unwrap();
+        assert_eq!((c1.start, c1.duration, c1.offset), (0, 70, 40), "ролик начинается на 30 кадров позже");
+        assert_eq!(clips.iter().find(|c| c.id == "c2").unwrap().start, 70);
+        let tail = clips.iter().find(|c| c.id == "c3").unwrap();
+        assert_eq!((tail.start, tail.duration, tail.offset, tail.props.fade_in), (170, 30, 10, 6), "конец подходит к первому кадру: 10 + 30 = 40");
+        assert_eq!(tail.end(), 200, "длина ролика прежняя");
+    }
+
+    #[test]
+    fn cuts_are_clip_starts_without_the_first() {
+        let (a, b, c) = (clip("a", "v1", 10, 50, 0), clip("b", "v1", 60, 50, 0), clip("c", "v1", 110, 50, 0));
+        assert_eq!(cut_frames(&[&c, &a, &b]), vec![60, 110]);
+    }
+
+    #[test]
+    fn style_block_replaces_only_its_part() {
+        let first = style_block("", "a", "правило А");
+        assert!(first.contains("правило А"));
+        let with_user = format!("Мой текст\n\n{first}Еще текст");
+        let next = style_block(&with_user, "b", "правило Б");
+        assert!(next.contains("Мой текст") && next.contains("Еще текст") && next.contains("правило Б") && !next.contains("правило А"), "{next}");
+        assert!(style_block("Мой текст", "a", "x").starts_with("Мой текст\n\n"));
+    }
+
+    #[test]
+    fn ducking_with_zero_release_keeps_keys_increasing() {
+        let c = clip("m", "a2", 0, 1000, 0);
+        let keys = duck_keys(&[(100, 200), (300, 400)], &c, 0.5, 0, 0);
+        assert!(keys.windows(2).all(|w| w[0].0 < w[1].0), "{keys:?}");
+    }
+
+    #[test]
+    fn a_fully_silent_clip_is_left_alone() {
+        let mut tracks: Vec<Track> = default_tracks();
+        let mut markers: Vec<Marker> = vec![];
+        let mut clips = vec![clip("c1", "a1", 0, 100, 0)];
+        let mut e = Edit { tracks: &mut tracks, clips: &mut clips, markers: &mut markers };
+        apply_cuts(&mut e, "c1", &[(0, 100)]).unwrap();
+        assert_eq!(clips.len(), 1);
     }
 
     #[test]

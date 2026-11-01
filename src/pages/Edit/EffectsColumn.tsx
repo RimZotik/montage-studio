@@ -6,7 +6,7 @@ import { type AppError, type LibraryRow, type LibraryView, type ProjectView, typ
 import { ControlPanel, defaultsOf, loc } from "@/shared/ui/ControlPanel";
 
 export const TARGET_ICON: Record<string, LucideIcon> = { video: Clapperboard, audio: AudioLines, text: Type, sequence: Wand2, transition: Blend };
-const FILTERS = ["all", "tool", "video", "audio", "text", "transition"] as const;
+const FILTERS = ["all", "tool", "video", "audio", "text", "transition", "sound", "style"] as const;
 type Filter = (typeof FILTERS)[number];
 
 /** Значки назначения в углу карточки. */
@@ -28,7 +28,7 @@ export function TargetIcons({ targets }: { targets: string[] }) {
 
 /** Вкладка «Эффекты»: каталог библиотеки на «Монтаже». Эффект перетаскивается на клип или
  *  накладывается на выделение; инструмент открывает панель и запускается кнопкой. */
-export function EffectsColumn({ view, selected, onError, style }: { view: ProjectView; selected: string[]; onError: (e: AppError) => void; style?: React.CSSProperties }) {
+export function EffectsColumn({ view, selected, frame, onError, style }: { view: ProjectView; selected: string[]; frame: number; onError: (e: AppError) => void; style?: React.CSSProperties }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const [lib, setLib] = useState<LibraryView | null>(null);
@@ -69,7 +69,7 @@ export function EffectsColumn({ view, selected, onError, style }: { view: Projec
   const rows = useMemo(() => {
     const q = query.toLowerCase();
     return (lib?.items ?? [])
-      .filter((r) => filter === "all" || (filter === "tool" ? r.item.kind === "tool" : (r.item.targets ?? []).includes(filter)))
+      .filter((r) => filter === "all" || (["tool", "sound", "style"].includes(filter) ? r.item.kind === filter : r.item.kind === "effect" && (r.item.targets ?? []).includes(filter) || (filter === "audio" && r.item.kind === "tool" && (r.item.targets ?? []).includes("audio"))))
       .filter((r) => !q || `${loc(r.item.name, lang)} ${loc(r.item.description, lang)} ${(r.item.tags ?? []).join(" ")}`.toLowerCase().includes(q))
       .sort((a, b) => b.uses - a.uses || loc(a.item.name, lang).localeCompare(loc(b.item.name, lang)));
   }, [lib, query, filter, lang]);
@@ -86,7 +86,7 @@ export function EffectsColumn({ view, selected, onError, style }: { view: Projec
 
   /** Перетаскивание своим способом: встроенное в окне, принимающем файлы, не работает. */
   const startDrag = (row: LibraryRow, e: React.PointerEvent) => {
-    if (row.item.kind !== "effect") return;
+    if (row.item.kind !== "effect" || e.button !== 0) return;
     const [x0, y0] = [e.clientX, e.clientY];
     let active = false;
     let over: HTMLElement | null = null;
@@ -103,9 +103,19 @@ export function EffectsColumn({ view, selected, onError, style }: { view: Projec
       setGhost({ name: loc(row.item.name, lang), x: ev.clientX, y: ev.clientY });
       hover(document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-clip]") ?? null);
     };
-    const up = () => {
+    const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+    };
+    // Перетаскивание прервано (окно потеряло мышь): ничего не накладывать.
+    const cancel = () => {
+      stop();
+      hover(null);
+      setGhost(null);
+    };
+    const up = () => {
+      stop();
       const id = over?.dataset.clip;
       hover(null);
       setGhost(null);
@@ -114,6 +124,7 @@ export function EffectsColumn({ view, selected, onError, style }: { view: Projec
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
   };
 
   const run = async () => {
@@ -149,6 +160,8 @@ export function EffectsColumn({ view, selected, onError, style }: { view: Projec
             title={loc(r.item.description, lang)}
             onPointerDown={(e) => startDrag(r, e)}
             onClick={() => {
+              if (r.item.kind === "sound") return void ipc.soundPlace(r.item.id, frame).then((x) => (x.status === "error" ? onError(x.error) : setNote(t("library.soundAdded"))));
+              if (r.item.kind === "style") return void ipc.styleApply(r.item.id, lang).then((x) => (x.status === "error" ? onError(x.error) : setNote(t("library.styleApplied"))));
               if (r.item.kind !== "tool") return;
               setOpen(r);
               setValues(defaultsOf(r.item.controls));

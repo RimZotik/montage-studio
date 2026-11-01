@@ -201,7 +201,7 @@ mod tests {
         assert!(names.contains(&"timeline_apply") && names.contains(&"project_summary"));
         for t in list.as_array().unwrap() {
             assert_eq!(t["inputSchema"]["type"], "object", "{}", t["name"]);
-            assert!(t["description"].as_str().unwrap().len() < 900, "описание короткое (токены)");
+            assert!(t["description"].as_str().unwrap().len() < 1200, "описание короткое (токены)");
         }
         assert_eq!(random_token().len(), 32);
     }

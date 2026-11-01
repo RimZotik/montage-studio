@@ -14,6 +14,8 @@ import { Monitor } from "./Monitor";
 import { Timeline } from "./Timeline";
 
 const WIDTHS = { media: 280, inspector: 300, timeline: 300 };
+const FILL = { flex: 1, minHeight: 0 };
+const noop = () => {};
 
 /** «Монтаж»: медиа | монитор | свойства, снизу таймлайн. Клавиши: пробел, стрелки, S, Delete,
  *  Shift+Delete, M, +/−. */
@@ -31,7 +33,9 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   const drag = useDragMedia();
 
   const total = useMemo(() => Math.max(fps * 5, ...view.clips.map((c) => c.start + c.duration)), [view.clips, fps]);
-  const srcOf = useCallback((p: string) => convertFileSrc(`${view.path}\\${p.replaceAll("/", "\\")}`), [view.path]);
+  // Тяжелый файл играет в мониторе через облегченную копию; экспорт всегда берет исходник.
+  const proxies = useMemo(() => new Map(media.filter((m) => m.proxy).map((m) => [m.path, m.proxy as string])), [media]);
+  const srcOf = useCallback((p: string) => { const px = proxies.get(p); return convertFileSrc(px ?? `${view.path}\\${p.replaceAll("/", "\\")}`); }, [view.path, proxies]);
 
   useEffect(() => {
     void ipc.mediaList().then((r) => r.status === "ok" && setMedia(r.data));
@@ -159,13 +163,13 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
               </button>
             ))}
           </div>
-          {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={() => {}} onError={onError} onImport={onImport} style={{ flex: 1, minHeight: 0 }} compact /> : <EffectsColumn view={view} selected={selected} onError={onError} style={{ flex: 1, minHeight: 0 }} />}
+          {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={noop} onError={onError} onImport={onImport} style={FILL} compact /> : <EffectsColumn view={view} selected={selected} frame={frame} onError={onError} style={FILL} />}
         </div>
         <Splitter width={w.media} min={200} max={480} side="left" onChange={(v) => setW("media", v)} onReset={() => setW("media", WIDTHS.media)} />
         <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} />
         <Splitter width={w.inspector} min={240} max={480} side="right" onChange={(v) => setW("inspector", v)} onReset={() => setW("inspector", WIDTHS.inspector)} />
         <div style={{ width: w.inspector, display: "flex", minHeight: 0 }}>
-          <Inspector view={view} clip={clip} frame={frame} apply={apply} />
+          <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} />
         </div>
       </div>
       <Splitter width={w.timeline} min={160} max={640} side="right" vertical onChange={(v) => setW("timeline", v)} onReset={() => setW("timeline", WIDTHS.timeline)} />

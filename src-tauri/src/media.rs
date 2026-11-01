@@ -40,6 +40,8 @@ pub struct MediaItem {
     pub probe: Option<Probe>,
     /// Миниатюра (полный путь к jpg в кэше проекта).
     pub thumb: Option<String>,
+    /// Облегченная копия для монитора, если файл тяжелый (полный путь).
+    pub proxy: Option<String>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -174,7 +176,9 @@ pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppRes
                 (_, None) => thumb_path.with_extension("png").is_file().then(|| thumb_path.with_extension("png").display().to_string()),
                 _ => None,
             };
-            items.push(MediaItem { path: rel, name, category: cat.to_owned(), size: meta.len(), probe, thumb });
+            let proxy_path = cache_dir.join("proxy").join(format!("{id}.mp4"));
+            let proxy = proxy_path.is_file().then(|| proxy_path.display().to_string());
+            items.push(MediaItem { path: rel, name, category: cat.to_owned(), size: meta.len(), probe, thumb, proxy });
         }
     }
     if dirty {
@@ -248,6 +252,53 @@ pub struct MediaJobs(std::sync::atomic::AtomicBool);
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 pub struct MediaChanged;
 
+/// Нужна ли облегченная копия: кадр больше Full HD или поток выше 30 Мбит/с. Обычному файлу она не
+/// нужна — браузер и так играет его без задержек.
+pub fn wants_proxy(item: &MediaItem) -> bool {
+    let Some(p) = item.probe.as_ref().filter(|p| p.video) else { return false };
+    let long_side = p.width.unwrap_or(0).max(p.height.unwrap_or(0));
+    let mbps = p.duration_s.filter(|d| *d > 0.0).map_or(0.0, |d| item.size as f64 * 8.0 / d / 1_000_000.0);
+    item.category == "footage" && (long_side > 2160 || mbps > 30.0)
+}
+
+/// Копии строятся фоном, по одной: ПК не перегружается, работать можно сразу.
+fn start_proxies(app: &AppHandle, dir: &Path, items: &[MediaItem]) {
+    static BUSY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let todo: Vec<(PathBuf, PathBuf)> = items
+        .iter()
+        .filter(|i| i.proxy.is_none() && wants_proxy(i))
+        .filter_map(|i| {
+            let k = key(&i.path, &std::fs::metadata(dir.join(&i.path)).ok()?);
+            let digest = <sha2::Sha256 as sha2::Digest>::digest(k.as_bytes());
+            let id: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
+            Some((dir.join(&i.path), dir.join(".studio/cache/proxy").join(format!("{id}.mp4"))))
+        })
+        .collect();
+    let Some(ffmpeg) = find(app, ToolId::Ffmpeg) else { return };
+    if todo.is_empty() || BUSY.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let app2 = app.clone();
+    std::thread::spawn(move || {
+        for (file, out) in todo {
+            let _ = std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")));
+            let tmp = out.with_extension("tmp.mp4");
+            // Частые опорные кадры: перемотка без ожидания.
+            let mut c = Command::new(&ffmpeg);
+            c.args(["-v", "error", "-y", "-threads", "2", "-i"]).arg(&file).args(["-vf", "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-g", "15", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]).arg(&tmp);
+            let ok = quiet(&mut c).status().is_ok_and(|s| s.success()) && std::fs::rename(&tmp, &out).is_ok();
+            if ok {
+                log::info!("proxy ready: {}", out.display());
+                let _ = tauri_specta::Event::emit(&MediaChanged, &app2);
+            } else {
+                let _ = std::fs::remove_file(&tmp);
+                log::warn!("proxy failed: {}", file.display());
+            }
+        }
+        BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    });
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn media_list(app: AppHandle, project: State<'_, ProjectState>, jobs: State<'_, MediaJobs>) -> AppResult<Vec<MediaItem>> {
@@ -255,6 +306,7 @@ pub async fn media_list(app: AppHandle, project: State<'_, ProjectState>, jobs: 
     let dir2 = dir.clone();
     let items = tauri::async_runtime::spawn_blocking(move || list(&dir2, None, None)).await.map_err(|e| AppError::new("internal", e.to_string()))??;
     // Чего не хватает (данные файла, миниатюра, волна) — строится фоном, затем `MediaChanged`.
+    start_proxies(&app, &dir, &items);
     let missing = items.iter().any(|i| (i.category != "images" && i.probe.is_none()) || i.thumb.is_none());
     let (fp, ff) = (find(&app, ToolId::Ffprobe), find(&app, ToolId::Ffmpeg));
     if missing && fp.is_some() && ff.is_some() && !jobs.0.swap(true, std::sync::atomic::Ordering::SeqCst) {

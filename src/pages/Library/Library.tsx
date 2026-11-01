@@ -42,6 +42,9 @@ export function Library({ onError, onToast }: { onError: (e: AppError) => void; 
   const [sel, setSel] = useState<string | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [newName, setNewName] = useState<string | null>(null);
+  // Удаление стирает и историю правок: второе нажатие подтверждает.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => setConfirmDelete(false), [sel]);
 
   const load = useCallback(() => void ipc.libraryView().then((r) => (r.status === "ok" ? setLib(r.data) : onError(r.error))), [onError]);
   useEffect(() => {
@@ -189,6 +192,7 @@ export function Library({ onError, onToast }: { onError: (e: AppError) => void; 
             <p className="faint">{loc(row.item.description, lang)}</p>
             {row.item.kind === "effect" && <EffectPreview row={row} values={values} />}
             <ControlPanel controls={row.item.controls} values={values} onChange={(id, v) => setValues((x) => ({ ...x, [id]: v }))} />
+            {row.item.kind === "style" && <pre className="librules">{loc(row.item.rules, lang)}</pre>}
             <p className="faint libmeta">
               {t("library.inPack", { pack: loc(owner?.name, lang) })} · {t("library.revision", { n: row.item.revision })}
             </p>
@@ -198,9 +202,9 @@ export function Library({ onError, onToast }: { onError: (e: AppError) => void; 
                 {t("library.copy")}
               </button>
               {!owner?.readonly && (
-                <button className="btn" onClick={() => void ipc.libraryDelete(row.item.id).then((r) => { done(r); setSel(null); })}>
+                <button className={`btn ${confirmDelete ? "danger" : ""}`} onClick={() => (confirmDelete ? void ipc.libraryDelete(row.item.id).then((r) => { done(r); setSel(null); }) : setConfirmDelete(true))}>
                   <Trash2 size={14} strokeWidth={1.75} />
-                  {t("edit.delete")}
+                  {confirmDelete ? t("library.deleteSure") : t("edit.delete")}
                 </button>
               )}
             </div>

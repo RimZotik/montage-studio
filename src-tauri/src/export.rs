@@ -399,6 +399,13 @@ pub fn export_start(app: AppHandle, settings: ExportSettings) -> AppResult<Strin
 pub fn export_cancel(state: State<'_, ExportState>) {
     state.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(c) = state.child.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_mut() {
+        // Вместе с браузером и кодировщиком движка: иначе они держат файл.
+        #[cfg(windows)]
+        {
+            let mut t = Command::new("taskkill");
+            t.args(["/T", "/F", "/PID", &c.id().to_string()]);
+            let _ = quiet(&mut t).status();
+        }
         let _ = c.kill();
     }
 }

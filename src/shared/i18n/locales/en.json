@@ -370,12 +370,12 @@
         "v": "zoom"
       },
       "tools": {
-        "k": "V / C / N",
-        "v": "select / blade / snapping"
+        "k": "V, C",
+        "v": "select, blade"
       },
       "copy": {
-        "k": "Ctrl+C / V / D",
-        "v": "copy / paste at playhead / duplicate"
+        "k": "Ctrl+D",
+        "v": "duplicate"
       }
     },
     "claudeBusy": "Claude is working on the timeline — wait or stop",

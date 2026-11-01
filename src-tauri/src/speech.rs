@@ -155,6 +155,10 @@ pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, track: &str, rules: &C
         // Тянется до следующего, если между ними совсем мало.
         let held = if next.saturating_sub(*b) <= hold { next } else { (*b).max(start + min) };
         let end = held.min(next).min(clip.end()).max(start + 1);
+        // Клип оборвал реплику на первых кадрах: мелькание вместо текста.
+        if end >= clip.end() && end - start < 3 {
+            continue;
+        }
         ops.push(Op::AddClip { track: track.to_owned(), kind: ClipKind::Caption, src: None, text: Some(text.clone()), start: *start, duration: end - start, offset: None });
     }
     ops

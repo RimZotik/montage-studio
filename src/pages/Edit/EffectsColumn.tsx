@@ -9,7 +9,7 @@ import { PresetPreview, TargetIcons } from "@/shared/ui/PresetPreview";
 import { useSetting } from "@/shared/settings/settings";
 import { startDrag } from "./dragMedia";
 
-const FILTERS = ["all", "tool", "video", "audio", "text", "transition", "sound", "style"] as const;
+const FILTERS = ["all", "tool", "component", "video", "audio", "text", "transition", "sound", "style"] as const;
 type Filter = (typeof FILTERS)[number];
 
 // Один проигрыватель на всю программу: и список, и каталог видят, что играет.
@@ -112,7 +112,7 @@ export function EffectsColumn({ view, selected, pickedTrack, frame, onError, sty
   const rows = useMemo(() => {
     const q = query.toLowerCase();
     return (lib?.items ?? [])
-      .filter((r) => filter === "all" || (["tool", "sound", "style"].includes(filter) ? r.item.kind === filter : (r.item.kind === "effect" && (r.item.targets ?? []).includes(filter)) || (filter === "audio" && r.item.kind === "tool" && (r.item.targets ?? []).includes("audio"))))
+      .filter((r) => filter === "all" || (["tool", "sound", "style", "component"].includes(filter) ? r.item.kind === filter : (r.item.kind === "effect" && (r.item.targets ?? []).includes(filter)) || (filter === "audio" && r.item.kind === "tool" && (r.item.targets ?? []).includes("audio"))))
       .filter((r) => !q || `${loc(r.item.name, lang)} ${loc(r.item.description, lang)} ${(r.item.tags ?? []).join(" ")}`.toLowerCase().includes(q))
       .sort((a, b) => b.uses - a.uses || loc(a.item.name, lang).localeCompare(loc(b.item.name, lang)));
   }, [lib, query, filter, lang]);
@@ -146,6 +146,15 @@ export function EffectsColumn({ view, selected, pickedTrack, frame, onError, sty
     [fps, onError, t],
   );
 
+  /** Сцена кодом встает от головки на свободную видеодорожку. */
+  const placeScene = useCallback(
+    (row: LibraryRow, params: Record<string, unknown> = {}) => {
+      if (!row.item.entry) return setNote(t("library.sceneParts"));
+      void ipc.componentAdd(row.item.id, frame, params).then((x) => (x.status === "error" ? onError(x.error) : setNote(t("library.scenePlaced"))));
+    },
+    [frame, onError, t],
+  );
+
   const applyStyle = useCallback((row: LibraryRow) => void ipc.styleApply(row.item.id, lang).then((x) => (x.status === "error" ? onError(x.error) : setNote(t("library.styleApplied")))), [lang, onError, t]);
 
   /** Двойной щелчок и кнопка в большом каталоге: то же действие элемента. */
@@ -157,11 +166,12 @@ export function EffectsColumn({ view, selected, pickedTrack, frame, onError, sty
         if (!selected.length && pickedTrack) void applyToTrack(row, pickedTrack);
         else void applyEffect(row, selected);
       }
+      else if (row.item.kind === "component") placeScene(row);
       else if (row.item.kind === "style") applyStyle(row);
       else showCard(row);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyEffect, applyStyle, frame, pickedTrack, placeSound, selected],
+    [applyEffect, applyStyle, frame, pickedTrack, placeScene, placeSound, selected],
   );
 
   const showCard = (row: LibraryRow) => {
@@ -307,6 +317,11 @@ export function EffectsColumn({ view, selected, pickedTrack, frame, onError, sty
             <button className="btn pri" disabled={!selected.length && !pickedTrack} title={selected.length || pickedTrack ? undefined : t("library.selectClip")} onClick={() => void (!selected.length && pickedTrack ? applyToTrack(open, pickedTrack, values) : applyEffect(open, selected, values))}>
               <Play size={14} strokeWidth={1.75} />
               {!selected.length && pickedTrack ? t("library.applyToTrack") : t("library.applyToSelected")}
+            </button>
+          ) : open.item.kind === "component" ? (
+            <button className="btn pri" disabled={!open.item.entry} title={open.item.entry ? undefined : t("library.sceneParts")} onClick={() => placeScene(open, values)}>
+              <Play size={14} strokeWidth={1.75} />
+              {t("library.use.component")}
             </button>
           ) : open.item.kind === "style" ? (
             <button className="btn pri" onClick={() => applyStyle(open)}>

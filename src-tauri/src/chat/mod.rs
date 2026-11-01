@@ -27,7 +27,7 @@ pub use events::{ChatEvent, Parsed};
 const TOOLS: &str = "Read,Glob,Grep,Edit,Write";
 /// Без вопроса разрешено: чтение и правка правил проекта. Остальное — отказ (видно в чате).
 /// `mcp__studio` — все инструменты MCP студии (правки идут через сервис проекта с отменой).
-const ALLOWED: [&str; 6] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)", "mcp__studio"];
+const ALLOWED: [&str; 8] = ["Read", "Glob", "Grep", "Edit(rules/**)", "Write(rules/**)", "Edit(smart/**)", "Write(smart/**)", "mcp__studio"];
 
 /// Строка истории чата для показа (`.studio/claude/chat.jsonl`).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
@@ -250,7 +250,12 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
     let (dir, doc) = project.context().ok_or_else(|| AppError::new("noProject", "no project"))?;
     let cdir = claude_dir(&dir);
     std::fs::create_dir_all(&cdir)?;
-    let (system, hash) = prompt::system_prompt(&dir, &doc, env!("CARGO_PKG_VERSION"));
+    let (mut system, hash) = prompt::system_prompt(&dir, &doc, env!("CARGO_PKG_VERSION"));
+    // Заметки о том, как работает пользователь: общие для всех проектов.
+    let user_notes = crate::library::root_of(app).ok().and_then(|r| std::fs::read_to_string(r.join("claude-notes.md")).ok()).unwrap_or_default();
+    if !user_notes.trim().is_empty() {
+        system.push_str(&format!("\n## Your notes on how this user works\n{}\n", user_notes.trim()));
+    }
     // Сменилась модель в настройках — тоже перезапуск (с той же сессией).
     let setting = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).unwrap_or_default();
     let current = chat.session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().map(|s| s.model.clone());
@@ -262,7 +267,7 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
     let hash = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        (hash, &model).hash(&mut h);
+        (hash, &model, &user_notes).hash(&mut h);
         h.finish()
     };
     let system_path = cdir.join("system.md");

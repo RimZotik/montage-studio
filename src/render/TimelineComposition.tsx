@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { AbsoluteFill, Html5Audio, Html5Video, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useRemotionEnvironment, useVideoConfig } from "remotion";
 import type { Clip, Sequence as Seq, Track } from "@/shared/ipc/bindings";
 import { effectsAt, volumeAt } from "./effects";
+import { SmartClip, type SmartSources } from "./smart";
 
 // Композиция «таймлайн» (docs/architecture.md): из данных проекта собирается кадр — тот же код
 // играет в предпросмотре (Remotion Player) и позже рендерит видео, поэтому картинка совпадает.
@@ -12,8 +13,11 @@ export type CompositionProps = {
   clips: Clip[];
   /** Путь внутри проекта → адрес файла для плеера. */
   srcOf: (path: string) => string;
+  /** Исходники умных клипов; без доверия к проекту — пусто. */
+  smart?: SmartSources;
 };
 
+const NO_SOURCES: SmartSources = {};
 const IMAGE = /\.(png|jpe?g|webp|gif|svg|bmp)$/i;
 
 /** Свойства клипа со значениями по умолчанию (в файле поля могут отсутствовать). */
@@ -154,7 +158,21 @@ export function withTrackEffects(clips: Clip[], tracks: Track[]): Clip[] {
   });
 }
 
-export function TimelineComposition({ sequence, tracks, clips: raw, srcOf }: CompositionProps) {
+/** Сцена кодом как клип: свойства и эффекты клипа работают и на ней. Без кода — ничего не рисует. */
+function SmartLayer({ clip, sources, srcOf }: { clip: Clip; sources: SmartSources; srcOf: (p: string) => string }) {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const p = propsOf(clip);
+  const fx = effectsAt(clip.effects, frame, clip.duration, fps);
+  if (!clip.src || !(clip.src in sources)) return null;
+  return (
+    <AbsoluteFill style={{ opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }}>
+      <SmartClip src={clip.src} data={clip.text ?? null} sources={sources} srcOf={srcOf} />
+    </AbsoluteFill>
+  );
+}
+
+export function TimelineComposition({ sequence, tracks, clips: raw, srcOf, smart }: CompositionProps) {
   const { fps } = useVideoConfig();
   const clips = useMemo(() => withTrackEffects(raw, tracks), [raw, tracks]);
   const { isRendering } = useRemotionEnvironment();
@@ -190,7 +208,7 @@ export function TimelineComposition({ sequence, tracks, clips: raw, srcOf }: Com
               z: z.get(c.id) ?? 0,
               el: (
                 <Sequence key={c.id} from={c.start} durationInFrames={c.duration}>
-                  {c.kind === "caption" ? <CaptionClip clip={c} above={clips.filter((h) => h.track === t.id && h.kind === "caption" && (z.get(h.id) ?? 0) > (z.get(c.id) ?? 0) && h.start < c.start + c.duration && h.start + h.duration > c.start)} /> : <SolidClip clip={c} />}
+                  {c.kind === "smart" ? <SmartLayer clip={c} sources={smart ?? NO_SOURCES} srcOf={srcOf} /> : c.kind === "caption" ? <CaptionClip clip={c} above={clips.filter((h) => h.track === t.id && h.kind === "caption" && (z.get(h.id) ?? 0) > (z.get(c.id) ?? 0) && h.start < c.start + c.duration && h.start + h.duration > c.start)} /> : <SolidClip clip={c} />}
                 </Sequence>
               ),
             })),

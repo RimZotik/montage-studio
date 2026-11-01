@@ -948,6 +948,71 @@ pub fn style_apply_to_project(app: &AppHandle, id: &str, lang: &str) -> AppResul
     Ok("rules/style.md".into())
 }
 
+/// Поставить набор компонентов в проект: исходники в `smart/<id>/`, файлы — в `media/assets/`. Итог —
+/// что появилось.
+pub fn component_install(app: &AppHandle, id: &str) -> AppResult<String> {
+    let root = library::root_of(app)?;
+    let (item, pack) = library::find(&root, id).filter(|(i, _)| i.kind == "component").ok_or_else(|| bad(format!("component {id} not found")))?;
+    let (dir, _) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let mut files = Vec::new();
+    for (rel, text) in item.files.as_object().into_iter().flatten() {
+        let out = dir.join("smart").join(id).join(rel);
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out, text.as_str().unwrap_or(""))?;
+        files.push(format!("smart/{id}/{rel}"));
+    }
+    let assets = library::item_dir(&root, &pack, &item).join("assets");
+    let mut copied = 0;
+    let mut stack = vec![assets.clone()];
+    while let Some(folder) = stack.pop() {
+        for e in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(rel) = path.strip_prefix(&assets) {
+                let to = dir.join("media/assets").join(rel);
+                if let Some(parent) = to.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::copy(&path, &to)?;
+                copied += 1;
+            }
+        }
+    }
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri_specta::Event::emit(&crate::smart::SmartChanged, app)));
+    library::bump(&app.state::<Db>(), id);
+    Ok(format!("files: {}; assets in media/assets: {copied}", files.join(", ")))
+}
+
+/// Поставить сцену из библиотеки: код уходит в проект (если еще нет), на свободной видеодорожке
+/// появляется клип с данными панели. Один шаг отмены. Итог — ID клипа.
+pub fn component_place(app: &AppHandle, id: &str, start: u32, seconds: Option<f64>, params: &Value, label: &str) -> AppResult<String> {
+    let root = library::root_of(app)?;
+    let (item, _) = library::find(&root, id).filter(|(i, _)| i.kind == "component").ok_or_else(|| bad(format!("component {id} not found")))?;
+    let entry = item.entry.clone().ok_or_else(|| bad(format!("component {id} has no entry: it is a set of parts, import it from your scene")))?;
+    let (dir, doc) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    if !dir.join("smart").join(id).join(&entry).is_file() {
+        component_install(app, id)?;
+    }
+    let fps = doc.project.sequence.fps;
+    let duration = secs_to_frames(seconds.or(item.seconds).unwrap_or(3.0), fps).max(1);
+    let data = library::with_defaults(&item.controls, params);
+    let mut made = String::new();
+    commit(app, label, |e| {
+        let end = start + duration;
+        let free = e.tracks.iter().rev().find(|t| t.kind == TrackKind::Video && !t.locked && !e.clips.iter().any(|c| c.track == t.id && c.start < end && c.end() > start)).map(|t| t.id.clone());
+        let track = match free {
+            Some(t) => t,
+            None => e.apply(&Op::AddTrack { kind: TrackKind::Video })?.pop().ok_or_else(|| bad("no track"))?,
+        };
+        made = e.apply(&Op::AddClip { track, kind: ClipKind::Smart, src: Some(format!("smart/{id}/{entry}")), text: Some(data.to_string()), start, duration, offset: None })?.pop().unwrap_or_default();
+        Ok(())
+    })?;
+    Ok(made)
+}
+
 /// Наложить эффект библиотеки на всю дорожку одним шагом отмены.
 pub fn apply_effect_to_track(app: &AppHandle, id: &str, params: &Value, track: &str, label: &str) -> AppResult<()> {
     let root = library::root_of(app)?;
@@ -1003,6 +1068,12 @@ pub fn style_apply(app: AppHandle, id: String, lang: String) -> AppResult<String
 #[specta::specta]
 pub async fn sound_place(app: AppHandle, id: String, frame: u32, track: Option<String>) -> AppResult<String> {
     tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, &[frame], track.as_deref(), None, "sound").map(|v| v.join(","))).await.map_err(|e| AppError::new("internal", e.to_string()))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn component_add(app: AppHandle, id: String, frame: u32, params: Json) -> AppResult<String> {
+    component_place(&app, &id, frame, None, &params.0, "scene")
 }
 
 #[tauri::command]

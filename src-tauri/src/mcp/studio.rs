@@ -23,6 +23,10 @@ pub fn list() -> Value {
         { "name": "library_get", "description": "Full JSON of a library item (before changing it).", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
         { "name": "library_preview", "description": "Attach a card preview to your library item. type wave|blocks: before, after = arrays of numbers (loudness bars or clip lengths, up to 512). type image: beforeFile, afterFile = paths from render_frame (shrunk and embedded). Effects already preview live: only for tools, sounds or a real example.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "type": { "type": "string" }, "before": { "type": "array", "items": { "type": "number" } }, "after": { "type": "array", "items": { "type": "number" } }, "beforeFile": { "type": "string" }, "afterFile": { "type": "string" } }, "required": ["id", "type"] } },
         { "name": "captions_file", "description": "Real video captions as files. action export: write .srt, .vtt, .ass next to the videos from the captions track. action import: read a .srt/.vtt/.ass file (path) onto the captions track, replacing what is there, with its look.", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "path": { "type": "string" } }, "required": ["action"] } },
+        { "name": "component_place", "description": "Put a saved code scene from the library on the timeline at frame: installs its code if needed, a free video track, params as its data. Returns the clip id.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frame": { "type": "integer" }, "seconds": { "type": "number" }, "params": { "type": "object" } }, "required": ["id", "frame"] } },
+        { "name": "notes_write", "description": "Replace your hidden notes (not shown to the user, always in your context, up to 4000 characters). scope project: this video; user: how this user works, for all projects.", "inputSchema": { "type": "object", "properties": { "scope": { "type": "string" }, "text": { "type": "string" } }, "required": ["scope", "text"] } },
+        { "name": "smart_reload", "description": "Show changes in smart/ in the monitor. Call after editing a component without a timeline change.", "inputSchema": { "type": "object", "properties": {} } },
+        { "name": "component_install", "description": "Install a library component set into smart/<id>/ and its files into media/assets/ (staticFile finds them by the short path).", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
         { "name": "library_save", "description": "Create or update an effect or tool, including its control panel. New items go to `pack` (default main). The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
         { "name": "pack_edit", "description": "Packs. action: list | create (name) | add (pack,item) | remove (pack,item) | delete (pack; its items move to main).", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "pack": { "type": "string" }, "item": { "type": "string" }, "name": { "type": "string" } }, "required": ["action"] } },
         { "name": "effect_apply", "description": "Put a library effect on clips in one call: where (condition, as in editWhere select), clips, or the selection; track = on the whole track, future clips included. params override its defaults. One undo step.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "where": { "type": "object" }, "track": { "type": "string" }, "params": { "type": "object" } }, "required": ["id"] } },
@@ -119,6 +123,31 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
                 library::changed(app);
                 Ok(format!("preview attached to {id}"))
             }
+            "component_place" => {
+                let frame = args["frame"].as_u64().and_then(|f| u32::try_from(f).ok()).ok_or("frame required")?;
+                presets::component_place(app, args["id"].as_str().ok_or("id required")?, frame, args["seconds"].as_f64(), &args["params"], &turn_label(app)).map(|c| format!("ok: {c}")).map_err(|e| format!("refused ({}): {}", e.code, e.message))
+            }
+            "notes_write" => {
+                let text = args["text"].as_str().ok_or("text required")?;
+                if text.chars().count() > 4000 {
+                    return Err("notes are limited to 4000 characters: keep what matters".into());
+                }
+                let path = match args["scope"].as_str() {
+                    Some("user") => root.join("claude-notes.md"),
+                    Some("project") => app.state::<ProjectState>().context().ok_or("no project is open")?.0.join(".studio/claude/notes.md"),
+                    _ => return Err("scope: project or user".into()),
+                };
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                std::fs::write(&path, text).map_err(|e| e.to_string())?;
+                Ok("saved".into())
+            }
+            "smart_reload" => {
+                let _ = tauri_specta::Event::emit(&crate::smart::SmartChanged, app);
+                Ok("ok".into())
+            }
+            "component_install" => presets::component_install(app, args["id"].as_str().ok_or("id required")?).map_err(|e| format!("refused ({}): {}", e.code, e.message)),
             "captions_file" => match args["action"].as_str().unwrap_or("") {
                 "export" => crate::captions::save_all(app).map(|p| p.join(", ")).map_err(|e| e.message),
                 "import" => crate::captions::import_file(app, args["path"].as_str().ok_or("path required")?).map(|n| format!("{n} captions imported")).map_err(|e| e.message),

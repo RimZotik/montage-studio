@@ -116,6 +116,12 @@ export function Inspector({ view, clip, frame, apply, onError, selectedCount, pi
       <Slider label={t("edit.fadeIn")} value={p.fadeIn} min={0} max={Math.min(fps * 3, clip.duration)} step={1} scale={1 / fps} unit={` ${t("chat.sec")}`} onCommit={(fadeIn) => set({ fadeIn })} />
       <Slider label={t("edit.fadeOut")} value={p.fadeOut} min={0} max={Math.min(fps * 3, clip.duration)} step={1} scale={1 / fps} unit={` ${t("chat.sec")}`} onCommit={(fadeOut) => set({ fadeOut })} />
       {track?.kind === "audio" && <Slider label={t("edit.trackVolume", { name: track.name })} value={track.volume ?? 1} min={0} max={2} step={0.01} unit="%" scale={100} onCommit={(volume) => void apply([{ op: "setTrack", id: track.id, muted: null, locked: null, volume }], "track")} />}
+      {clip.kind === "smart" && (
+        <>
+          <div className="ctlsec">{t("smart.data")}</div>
+          <textarea className="field smartdata" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== (clip.text ?? "") && void apply([{ op: "setText", id: clip.id, text }], "text")} />
+        </>
+      )}
       {!!clip.effects?.length && <div className="ctlsec">{t("library.applied")}</div>}
       {clip.effects?.map((fx) => <EffectCard key={fx.id} clip={clip} fx={fx} view={view} apply={apply} lang={i18n.language} onError={onError} />)}
       <div className="ibtns">

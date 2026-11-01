@@ -1,14 +1,14 @@
 import { Player, type PlayerRef } from "@remotion/player";
-import { Pause, Play, Scan, SkipBack, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, Scan, ShieldAlert, SkipBack, Volume2, VolumeX } from "lucide-react";
 import { type RefObject, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { ProjectView } from "@/shared/ipc/bindings";
+import { type ProjectView, type SmartState, commands as ipc } from "@/shared/ipc/bindings";
 import { TimelineComposition } from "@/render/TimelineComposition";
 import { useSetting } from "@/shared/settings/settings";
 import { timecode } from "./time";
 
 /** Монитор: плеер композиции «таймлайн» (та же, что пойдет в рендер), транспорт, безопасная зона. */
-export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { view: ProjectView; total: number; playerRef: RefObject<PlayerRef | null>; srcOf: (p: string) => string; frame: number; playing: boolean }) {
+export function Monitor({ view, total, playerRef, srcOf, frame, playing, smart }: { smart: SmartState | null; view: ProjectView; total: number; playerRef: RefObject<PlayerRef | null>; srcOf: (p: string) => string; frame: number; playing: boolean }) {
   const { t } = useTranslation();
   const seq = view.project.sequence;
   const [safe, setSafe] = useSetting("monitor.safeZone", true);
@@ -21,7 +21,7 @@ export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { vie
     if (muted) p.mute();
     else p.unmute();
   }, [volume, muted, playerRef]);
-  const inputProps = useMemo(() => ({ sequence: seq, tracks: view.tracks, clips: view.clips, srcOf }), [seq, view.tracks, view.clips, srcOf]);
+  const inputProps = useMemo(() => ({ sequence: seq, tracks: view.tracks, clips: view.clips, srcOf, smart: smart?.sources }), [seq, view.tracks, view.clips, srcOf, smart?.sources]);
   const vertical = seq.height > seq.width;
 
   useEffect(() => {
@@ -48,6 +48,15 @@ export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { vie
             acknowledgeRemotionLicense
           />
           {safe && vertical && <div className="safezone" />}
+          {smart?.hasCode && !smart.trusted && (
+            <div className="smartask">
+              <ShieldAlert size={20} strokeWidth={1.75} />
+              <p>{t("smart.ask")}</p>
+              <button className="btn pri" onClick={() => void ipc.smartTrust()}>
+                {t("smart.trust")}
+              </button>
+            </div>
+          )}
         </div>
       </div>
       <div className="transport">

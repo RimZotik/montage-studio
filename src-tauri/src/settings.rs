@@ -27,6 +27,8 @@ pub struct Settings {
     /// Новой настройке не нужен новый код в ядре и новая версия файла.
     #[specta(type = specta_typescript::Any)]
     pub ui: serde_json::Map<String, serde_json::Value>,
+    /// Проекты, код которых разрешено запускать (`docs/smart-clips.md`).
+    pub trusted_code: Vec<String>,
 }
 
 fn sonnet() -> String {
@@ -35,7 +37,7 @@ fn sonnet() -> String {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet(), ui: serde_json::Map::new() }
+        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet(), ui: serde_json::Map::new(), trusted_code: vec![] }
     }
 }
 
@@ -70,6 +72,14 @@ impl SettingsState {
         self.save(next).map(|_| ())
     }
 
+    pub fn trust_code(&self, project: String) -> AppResult<()> {
+        let mut next = self.get();
+        if !next.trusted_code.contains(&project) {
+            next.trusted_code.push(project);
+        }
+        self.save(next).map(|_| ())
+    }
+
     fn save(&self, value: Settings) -> AppResult<Settings> {
         let json = serde_json::to_vec_pretty(&value).map_err(|e| AppError::new("internal", e.to_string()))?;
         let tmp = self.path.with_extension("json.tmp");
@@ -90,7 +100,7 @@ pub fn settings_get(state: State<'_, SettingsState>) -> Settings {
 #[specta::specta]
 pub fn settings_update(state: State<'_, SettingsState>, value: Settings) -> AppResult<Settings> {
     // Значения интерфейса меняются только своей командой: окно могло держать старую копию.
-    state.save(Settings { version: VERSION, ui: state.get().ui, ..value })
+    state.save(Settings { version: VERSION, ui: state.get().ui, trusted_code: state.get().trusted_code, ..value })
 }
 
 /// Изменить значения интерфейса пачкой, остальное не трогается.

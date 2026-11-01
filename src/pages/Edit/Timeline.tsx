@@ -468,7 +468,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
                 const start = live?.start ?? c.start;
                 const duration = live?.duration ?? c.duration;
                 const m = c.src ? byPath.get(c.src) : undefined;
-                const label = c.kind === "caption" ? c.text : c.kind === "solid" ? c.text : (m?.name ?? c.src?.split("/").pop());
+                const label = c.kind === "smart" ? c.src?.split("/").pop() : c.kind === "caption" ? c.text : c.kind === "solid" ? c.text : (m?.name ?? c.src?.split("/").pop());
                 const bg = m?.thumb ? `url("${convertFileSrc(m.thumb)}")` : undefined;
                 const row = captionRow.get(c.id);
                 return (

@@ -1,5 +1,5 @@
-import "@fontsource/geist-sans/700.css";
-import { Composition, registerRoot } from "remotion";
+import "@/render/fonts";
+import { Composition, continueRender, delayRender, registerRoot } from "remotion";
 import type { ComponentType } from "react";
 import type { Clip, Sequence, Track } from "@/shared/ipc/bindings";
 import { TimelineComposition } from "./TimelineComposition";
@@ -7,10 +7,14 @@ import { TimelineComposition } from "./TimelineComposition";
 // Вход сборки для движка рендера (`scripts/build-render-bundle.mjs`): та же композиция, что в
 // мониторе. Файлы медиа отдает локальный сервер задания (`baseUrl`).
 
-type Props = { sequence: Sequence; tracks: Track[]; clips: Clip[]; baseUrl: string };
+type Props = { sequence: Sequence; tracks: Track[]; clips: Clip[]; baseUrl: string; smart?: Record<string, string> };
 
-function Timeline({ sequence, tracks, clips, baseUrl }: Props) {
-  return <TimelineComposition sequence={sequence} tracks={tracks} clips={clips} srcOf={(p) => `${baseUrl}/${p.split("/").map(encodeURIComponent).join("/")}`} />;
+// Шрифты до первого кадра: иначе первые кадры рендера уходят с запасным шрифтом.
+const fontsReady = delayRender("fonts");
+void Promise.all(["700 20px Unbounded", "900 20px Unbounded", "600 20px Montserrat", "800 20px Montserrat"].map((f) => document.fonts.load(f, "АаZz09"))).finally(() => continueRender(fontsReady));
+
+function Timeline({ sequence, tracks, clips, baseUrl, smart }: Props) {
+  return <TimelineComposition sequence={sequence} tracks={tracks} clips={clips} smart={smart} srcOf={(p) => `${baseUrl}/${p.split("/").map(encodeURIComponent).join("/")}`} />;
 }
 
 function Root() {

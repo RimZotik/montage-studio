@@ -2,7 +2,7 @@
 
 use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{cache, captions, chat, error, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
+use crate::{cache, captions, chat, error, smart, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -10,10 +10,13 @@ pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/sha
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new().commands(collect_commands![
         settings::settings_get,
+        smart::smart_state,
+        smart::smart_trust,
         settings::settings_set_ui,
         cache::cache_usage,
         cache::cache_clear,
         presets::track_effect_add,
+        presets::component_add,
         settings::settings_update,
         checks::system_check,
         projects::projects_recent,
@@ -76,7 +79,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         export::export_set_dir,
         export::export_delete,
     ])
-    .events(collect_events![components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged, mcp::UiCommand, speech::SpeechProgress, library::LibraryChanged, export::ExportProgress])
+    .events(collect_events![smart::SmartChanged, components::ComponentProgress, updates::UpdateChanged, project::ProjectChanged, chat::ChatEvent, claude_limits::LimitsChanged, media::MediaChanged, mcp::UiCommand, speech::SpeechProgress, library::LibraryChanged, export::ExportProgress])
 }
 
 #[cfg(any(debug_assertions, test))]

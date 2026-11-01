@@ -190,8 +190,10 @@ pub fn projects_recent(db: State<'_, Db>) -> AppResult<Vec<ProjectSummary>> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn project_create(db: State<'_, Db>, input: NewProject) -> AppResult<ProjectSummary> {
+pub fn project_create(db: State<'_, Db>, settings: State<'_, crate::settings::SettingsState>, input: NewProject) -> AppResult<ProjectSummary> {
     let (dir, (w, h)) = create_on_disk(&input)?;
+    // Созданный здесь проект свой: его код доверия не спрашивает.
+    crate::smart::trust(&settings, &dir)?;
     log::info!("project created: {}", dir.display());
     remember(&db, &dir.display().to_string(), input.name.trim(), (w, h, input.fps))
 }

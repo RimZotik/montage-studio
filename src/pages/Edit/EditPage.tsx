@@ -3,7 +3,7 @@ import type { PlayerRef } from "@remotion/player";
 import { Loader } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type AppError, type MediaItem, type Op, type ProjectView, commands as ipc, events } from "@/shared/ipc/bindings";
+import { type AppError, type MediaItem, type Op, type ProjectView, type SmartState, commands as ipc, events } from "@/shared/ipc/bindings";
 import { typingTarget } from "@/app/commands";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { MediaColumn } from "@/pages/Project/MediaColumn";
@@ -53,6 +53,24 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
     const off = events.mediaChanged.listen(() => void ipc.mediaList().then((r) => r.status === "ok" && setMedia(r.data)));
     return () => void off.then((f) => f());
   }, [mediaKey, view.path]);
+
+  // Код проекта: при открытии, после правок и по сигналу Claude. Тот же текст — тот же объект, чтобы
+  // монитор не пересобирал сцены без причины.
+  const [smart, setSmart] = useState<SmartState | null>(null);
+  const smartText = useRef("");
+  const readSmart = useCallback(() => {
+    void ipc.smartState().then((s) => {
+      const text = JSON.stringify(s);
+      if (text === smartText.current) return;
+      smartText.current = text;
+      setSmart(s);
+    });
+  }, []);
+  useEffect(readSmart, [readSmart, view.clips, view.path]);
+  useEffect(() => {
+    const off = events.smartChanged.listen(readSmart);
+    return () => void off.then((f) => f());
+  }, [readSmart]);
 
   // Головка и состояние воспроизведения — из плеера.
   useEffect(() => {
@@ -270,7 +288,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
           {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={noop} onError={onError} onImport={onImport} style={FILL} compact /> : <EffectsColumn view={view} selected={selected} pickedTrack={pickedTrack} frame={frame} onError={onError} style={FILL} />}
         </div>
         <Splitter width={w.media} min={200} max={480} side="left" onChange={(v) => setW("media", v)} onReset={() => setW("media", WIDTHS.media)} />
-        <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} />
+        <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} smart={smart} />
         <Splitter width={w.inspector} min={240} max={480} side="right" onChange={(v) => setW("inspector", v)} onReset={() => setW("inspector", WIDTHS.inspector)} />
         <div style={{ width: w.inspector, display: "flex", minHeight: 0 }}>
           <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} selectedCount={selected.length} pickedTrack={pickedTrack} />

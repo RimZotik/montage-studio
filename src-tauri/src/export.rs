@@ -260,7 +260,7 @@ fn job(app: &AppHandle, dir: &Path, doc: &crate::project::model::Snapshot) -> Ap
     Ok(json!({
         "bundle": bundle_dir(app)?,
         "projectDir": dir,
-        "props": { "sequence": doc.project.sequence, "tracks": doc.timeline.tracks, "clips": doc.timeline.clips },
+        "props": { "sequence": doc.project.sequence, "tracks": doc.timeline.tracks, "clips": doc.timeline.clips, "smart": crate::smart::runnable(app, dir) },
     }))
 }
 

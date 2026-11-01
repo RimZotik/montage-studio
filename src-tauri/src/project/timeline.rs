@@ -128,6 +128,8 @@ pub enum ClipKind {
     Caption,
     /// Заливка цветом.
     Solid,
+    /// Сцена кодом: `src` — компонент в `smart/`, `text` — его данные в JSON.
+    Smart,
 }
 
 /// Как файл ложится в кадр.
@@ -782,12 +784,15 @@ impl Edit<'_> {
 pub fn validate(tracks: &[Track], clips: &[Clip]) -> AppResult<()> {
     for c in clips {
         let t = tracks.iter().find(|t| t.id == c.track).ok_or_else(|| bad(format!("clip {} on missing track {}", c.id, c.track)))?;
-        let fits = matches!((t.kind, c.kind), (TrackKind::Captions, ClipKind::Caption) | (TrackKind::Video, ClipKind::Media | ClipKind::Solid) | (TrackKind::Audio, ClipKind::Media));
+        let fits = matches!((t.kind, c.kind), (TrackKind::Captions, ClipKind::Caption) | (TrackKind::Video, ClipKind::Smart | ClipKind::Media | ClipKind::Solid) | (TrackKind::Audio, ClipKind::Media));
         if !fits {
             return Err(bad(format!("clip {} kind does not fit track {}", c.id, t.id)));
         }
         if c.duration == 0 {
             return Err(bad(format!("clip {} has zero duration", c.id)));
+        }
+        if c.kind == ClipKind::Smart && !c.src.as_deref().is_some_and(|s| s.starts_with("smart/") && !s.contains("..")) {
+            return Err(bad(format!("clip {} has no component path in smart/", c.id)));
         }
         if c.kind == ClipKind::Media && !c.src.as_deref().is_some_and(|s| s.starts_with("media/") && !s.contains("..")) {
             return Err(bad(format!("clip {} has no media path", c.id)));

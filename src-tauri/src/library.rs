@@ -107,6 +107,14 @@ pub struct Item {
     /// Звук: готовый `.wav` рядом с описанием вместо синтеза.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
+    /// Набор компонентов: путь внутри `smart/` → исходник. Рядом с элементом может лежать `assets/`
+    /// (картинки и звуки набора). В архивы паков наборы кода не входят: чужой код сам не запускается.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    #[specta(type = specta_typescript::Any)]
+    pub files: Value,
+    /// Набор компонентов: какой файл ставится на таймлайн как сцена.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
     /// Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет.
     #[serde(default, skip_serializing_if = "Value::is_null")]
     #[specta(type = specta_typescript::Any)]
@@ -309,6 +317,12 @@ pub fn validate_item(item: &Item) -> AppResult<()> {
                 return Err(bad("style needs rules"));
             }
         }
+        "component" => {
+            let ok = item.files.as_object().is_some_and(|m| !m.is_empty() && m.iter().all(|(k, v)| v.is_string() && !k.contains("..") && !k.starts_with('/') && !k.contains('\\')));
+            if !ok {
+                return Err(bad("component needs files: {relative path: source}"));
+            }
+        }
         "sound" => {
             match (&item.file, &item.synth) {
                 (Some(f), _) if f.ends_with(".wav") && !f.contains('/') && !f.contains('\\') && !f.contains("..") => {}
@@ -329,6 +343,7 @@ fn folder(kind: &str) -> &'static str {
         "tool" => "tools",
         "style" => "styles",
         "sound" => "sounds",
+        "component" => "components",
         _ => "effects",
     }
 }
@@ -338,6 +353,7 @@ fn file_name(kind: &str) -> &'static str {
         "tool" => "tool.json",
         "style" => "style.json",
         "sound" => "sound.json",
+        "component" => "component.json",
         _ => "effect.json",
     }
 }
@@ -448,7 +464,7 @@ pub fn packs(root: &Path) -> Vec<Pack> {
 pub fn items(root: &Path) -> Vec<(Item, String)> {
     let mut out = Vec::new();
     for pack in packs(root) {
-        for kind in ["effect", "tool", "style", "sound"] {
+        for kind in ["effect", "tool", "style", "sound", "component"] {
             for entry in std::fs::read_dir(root.join("packs").join(&pack.id).join(folder(kind))).into_iter().flatten().flatten() {
                 let path = entry.path().join(file_name(kind));
                 match std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Item>(&b).ok()) {
@@ -732,7 +748,9 @@ pub fn compact_index(root: &Path, used: &HashMap<String, (u32, i64)>, limit: usi
             .collect::<Vec<_>>()
             .join(" ")
     };
-    format!("[library {total} items; effects: {}; tools: {}; styles: {}; sounds: {}{}]\n", line("effect"), line("tool"), line("style"), line("sound"), if total > limit { "; more: library_list" } else { "" })
+    // Свои сцены кодом — с описанием: по нему Claude узнает, что уже делал, и не пишет заново.
+    let scenes = all.iter().take(limit).filter(|i| i.kind == "component").map(|i| format!("{}: {}", i.id, i.description.get("en").or_else(|| i.description.get("ru")).unwrap_or(&i.description).as_str().unwrap_or("").chars().take(70).collect::<String>())).collect::<Vec<_>>().join("; ");
+    format!("[library {total} items; code scenes: {scenes}; effects: {}; tools: {}; styles: {}; sounds: {}{}]\n", line("effect"), line("tool"), line("style"), line("sound"), if total > limit { "; more: library_list" } else { "" })
 }
 
 /// Библиотека для интерфейса.

@@ -19,12 +19,11 @@ const MAX_RULE_CHARS: usize = 20_000;
 fn capabilities(version: &str) -> String {
     format!(
         "## This studio version ({version})\n\
-         - Built-in tools: Read, Glob, Grep; Edit/Write only `rules/*.md`.\n\
+         - Built-in tools: Read, Glob, Grep; Edit/Write only `rules/**` and `smart/**` (scenes in code).\n\
          - Studio MCP tools (server `studio`): `project_summary`, `media_list`, `timeline_get`, `timeline_apply` (batched ops, one undo step), \
          `ui_seek`, `ui_select`, `ui_tab`, `log_errors`. Start with `project_summary`; read only the time range you need with `timeline_get`; \
          put all edits of one step into one `timeline_apply` call. Times are frames (seconds × fps).\n\
          - Library and sound tools: `library_list`, `library_get`, `library_save`, `pack_edit`, `effect_apply`, `tool_run`, `speech_transcribe`, `speech_find`, `audio_analyze`, `audio_peaks`, `render_frame`, `export_start`, `export_status`. See the rules below.\n\
-         - Not available yet: code-driven effects and smart clips — plan them and say so.\n\
          - Proposals and questions use fenced blocks the chat renders as cards (instead of `ui.propose` / `ui.ask`):\n\
          ```studio-proposal\n{{\"id\":\"p1\",\"kind\":\"plan|tool|effect|smart|rule|project\",\"title\":\"…\",\"description\":\"…\",\"details\":[\"…\"]}}\n```\n\
          ```studio-ask\n{{\"id\":\"q1\",\"question\":\"…\",\"options\":[\"…\",\"…\"]}}\n```\n\
@@ -57,6 +56,10 @@ pub fn system_prompt(dir: &Path, doc: &Snapshot, version: &str) -> (String, u64)
     }
     if !any {
         out.push_str("(none yet — offer to write a brief together if the task needs one)\n");
+    }
+    let notes = std::fs::read_to_string(dir.join(".studio/claude/notes.md")).unwrap_or_default();
+    if !notes.trim().is_empty() {
+        out.push_str(&format!("\n## Your notes on this project\n{}\n", notes.trim()));
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
     out.hash(&mut h);

@@ -8,12 +8,16 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	settingsGet: () => __TAURI_INVOKE<Settings>("settings_get"),
+	smartState: () => __TAURI_INVOKE<SmartState>("smart_state"),
+	/**  Пользователь разрешил запускать код этого проекта. */
+	smartTrust: () => typedError<null, AppError>(__TAURI_INVOKE("smart_trust")),
 	/**  Изменить значения интерфейса пачкой, остальное не трогается. */
 	settingsSetUi: (values: Json) => typedError<null, AppError>(__TAURI_INVOKE("settings_set_ui", { values })),
 	cacheUsage: () => typedError<CacheEntry[], AppError>(__TAURI_INVOKE("cache_usage")),
 	/**  Очистить кэш по имени из `cache_usage`. Другие имена не принимаются: чистится только кэш. */
 	cacheClear: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("cache_clear", { id })),
 	trackEffectAdd: (id: string, params: Json, track: string) => typedError<null, AppError>(__TAURI_INVOKE("track_effect_add", { id, params, track })),
+	componentAdd: (id: string, frame: number, params: Json) => typedError<string, AppError>(__TAURI_INVOKE("component_add", { id, frame, params })),
 	settingsUpdate: (value: Settings) => typedError<Settings, AppError>(__TAURI_INVOKE("settings_update", { value })),
 	/**  Проверить все программы и железо (в фоне: запуск программ занимает до секунды). */
 	systemCheck: () => typedError<SystemReport, AppError>(__TAURI_INVOKE("system_check")),
@@ -131,6 +135,7 @@ export const events = {
 	limitsChanged: makeEvent<LimitsChanged>("limits-changed"),
 	mediaChanged: makeEvent<MediaChanged>("media-changed"),
 	projectChanged: makeEvent<ProjectChanged_Deserialize>("project-changed"),
+	smartChanged: makeEvent<SmartChanged>("smart-changed"),
 	speechProgress: makeEvent<SpeechProgress>("speech-progress"),
 	uiCommand: makeEvent<UiCommand>("ui-command"),
 	updateChanged: makeEvent<UpdateChanged>("update-changed"),
@@ -229,7 +234,9 @@ export type ClipKind =
 /**  Текст субтитров. */
 "caption" | 
 /**  Заливка цветом. */
-"solid";
+"solid" | 
+/**  Сцена кодом: `src` — компонент в `smart/`, `text` — его данные в JSON. */
+"smart";
 
 export type ClipProps = ClipProps_Serialize | ClipProps_Deserialize;
 
@@ -458,6 +465,13 @@ export type Item_Deserialize = {
 	hitAt?: number | null,
 	/**  Звук: готовый `.wav` рядом с описанием вместо синтеза. */
 	file?: string | null,
+	/**
+	 *  Набор компонентов: путь внутри `smart/` → исходник. Рядом с элементом может лежать `assets/`
+	 *  (картинки и звуки набора). В архивы паков наборы кода не входят: чужой код сам не запускается.
+	 */
+	files?: any,
+	/**  Набор компонентов: какой файл ставится на таймлайн как сцена. */
+	entry?: string | null,
 	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
 	preview?: any,
 	/**  `studio`, `user`, `claude`. */
@@ -500,6 +514,13 @@ export type Item_Serialize = {
 	hitAt: number | null,
 	/**  Звук: готовый `.wav` рядом с описанием вместо синтеза. */
 	file?: string | null,
+	/**
+	 *  Набор компонентов: путь внутри `smart/` → исходник. Рядом с элементом может лежать `assets/`
+	 *  (картинки и звуки набора). В архивы паков наборы кода не входят: чужой код сам не запускается.
+	 */
+	files?: any,
+	/**  Набор компонентов: какой файл ставится на таймлайн как сцена. */
+	entry?: string | null,
 	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
 	preview?: any,
 	/**  `studio`, `user`, `claude`. */
@@ -751,11 +772,23 @@ export type Settings = {
 	 *  Новой настройке не нужен новый код в ядре и новая версия файла.
 	 */
 	ui?: any,
+	/**  Проекты, код которых разрешено запускать (`docs/smart-clips.md`). */
+	trustedCode?: string[],
 };
 
 export type Skipped = {
 	name: string,
 	reason: string,
+};
+
+/**  Код проекта поменялся (монитор перечитывает). */
+export type SmartChanged = null;
+
+export type SmartState = {
+	trusted: boolean,
+	/**  В проекте есть код, который без доверия не запускается. */
+	hasCode: boolean,
+	sources: { [key in string]: string },
 };
 
 /**  Установлена ли модель распознавания и какого она размера (для кнопки установки). */

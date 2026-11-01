@@ -3,6 +3,7 @@ import "@fontsource/geist-sans/500.css";
 import "@fontsource/geist-sans/600.css";
 import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
+import "@/render/fonts";
 import "@/shared/ui/app.css";
 import "@/shared/i18n";
 import { StrictMode } from "react";

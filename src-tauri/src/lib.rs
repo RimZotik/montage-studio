@@ -20,6 +20,7 @@ mod project;
 mod projects;
 mod rules;
 mod settings;
+mod smart;
 mod speech;
 mod updates;
 

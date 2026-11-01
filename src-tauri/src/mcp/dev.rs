@@ -81,6 +81,7 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Result<String, String>
         "dev_new_project" => {
             let new = crate::projects::NewProject { name: args["name"].as_str().ok_or("name required")?.to_owned(), parent: args["parent"].as_str().ok_or("parent required")?.to_owned(), preset: crate::projects::Preset::Vertical, fps: args["fps"].as_u64().unwrap_or(60) as u32 };
             let (dir, _) = crate::projects::create_on_disk(&new).map_err(|e| e.message)?;
+            crate::smart::trust(&app.state::<crate::settings::SettingsState>(), &dir).map_err(|e| e.message)?;
             let view = crate::project::open(app, &dir.display().to_string()).map_err(|e| e.message)?;
             send(app, UiCommand::Tab { tab: "prepare".into() });
             Ok(format!("opened {}", view.path))

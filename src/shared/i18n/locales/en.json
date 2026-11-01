@@ -487,7 +487,8 @@
       "effect": "effect",
       "tool": "tool",
       "style": "style",
-      "sound": "sound"
+      "sound": "sound",
+      "component": "code scene"
     },
     "author": {
       "studio": "studio",
@@ -502,7 +503,8 @@
       "text": "Text",
       "transition": "Transitions",
       "sound": "Sounds",
-      "style": "Styles"
+      "style": "Styles",
+      "component": "Scenes"
     },
     "target": {
       "video": "Video",
@@ -530,12 +532,15 @@
       "effect": "Apply to selection",
       "sound": "Place at playhead",
       "style": "Apply style",
-      "tool": "Open panel"
+      "tool": "Open panel",
+      "component": "Place at playhead"
     },
     "copySuffix": "copy",
     "deletePackSure": "Really delete? Items move to Main",
     "appliedTrack": "Effect on the whole track",
-    "applyToTrack": "Apply to the whole track"
+    "applyToTrack": "Apply to the whole track",
+    "sceneParts": "A set of parts: Claude imports it from its scenes",
+    "scenePlaced": "Scene on the timeline"
   },
   "export": {
     "title": "Export the video",
@@ -612,5 +617,10 @@
       "frames": "Check frames",
       "sounds": "Sounds for listening"
     }
+  },
+  "smart": {
+    "ask": "This project has scenes in code. They run with the app's rights. Allow only if you trust the source of the project.",
+    "trust": "Trust this project",
+    "data": "Scene data"
   }
 }

@@ -120,7 +120,10 @@ pub fn call<R: tauri::Runtime>(app: &AppHandle<R>, name: &str, args: &Value) -> 
         "timeline_apply" => {
             let ops: Vec<Op> = serde_json::from_value(args["ops"].clone()).map_err(|e| format!("bad ops: {e}"))?;
             let turn = mcp.turn.load(std::sync::atomic::Ordering::SeqCst);
-            send(app, UiCommand::Busy { area: "timeline".into() });
+            // Блокировка — только на ход чата: ее снимает конец хода.
+            if app.try_state::<crate::chat::ChatState>().is_some_and(|c| c.is_busy()) {
+                send(app, UiCommand::Busy { area: "timeline".into() });
+            }
             let mut created = Vec::new();
             let state = app.state::<ProjectState>();
             let view = state

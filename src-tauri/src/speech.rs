@@ -111,11 +111,16 @@ pub fn caption_ops(clip: &Clip, words: &[Word], fps: u32, track: &str, rules: &C
         })
         .collect();
     let mut ops = Vec::new();
+    // Слово не мелькает: если следующая реплика начинается раньше, чем прошла минимальная длина, она
+    // показывается с небольшой задержкой.
+    let mut free = 0;
     for (i, (a, b, text)) in timed.iter().enumerate() {
+        let start = (*a).max(free);
         let next = timed.get(i + 1).map_or(u32::MAX, |n| n.0);
-        // Тянется до следующего, если между ними совсем мало; не наезжает на него.
-        let end = if next.saturating_sub(*b) <= hold { next } else { (*b).max(a + min) }.min(next);
-        ops.push(Op::AddClip { track: track.to_owned(), kind: ClipKind::Caption, src: None, text: Some(text.clone()), start: *a, duration: end.saturating_sub(*a).max(1), offset: None });
+        // Тянется до следующего, если между ними совсем мало.
+        let end = if next.saturating_sub(*b) <= hold { next } else { *b }.max(start + min).min(clip.end().max(start + 1));
+        free = end;
+        ops.push(Op::AddClip { track: track.to_owned(), kind: ClipKind::Caption, src: None, text: Some(text.clone()), start, duration: end - start, offset: None });
     }
     ops
 }

@@ -141,6 +141,8 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
 
   return (
     <aside className="col fxcol" style={style}>
+      {!open && (
+        <>
       <label className="search fxsearch">
         <Search size={14} strokeWidth={1.75} />
         <input placeholder={t("library.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -156,7 +158,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
         {rows.map((r) => (
           <div
             key={r.item.id}
-            className={`fxcard ${open?.item.id === r.item.id ? "on" : ""}`}
+            className="fxcard"
             title={loc(r.item.description, lang)}
             onPointerDown={(e) => startDrag(r, e)}
             onClick={() => {
@@ -175,6 +177,8 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
         ))}
         {!rows.length && <p className="faint ihint">{t("library.nothing")}</p>}
       </div>
+        </>
+      )}
       {note && <div className="fxnote">{note}</div>}
       {open && (
         <div className="fxpanel">

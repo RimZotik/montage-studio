@@ -19,6 +19,8 @@ pub fn list() -> Value {
         { "name": "dev_chat_wait", "description": "Wait until the studio Claude finishes its reply (default up to 180 s) and return the turn: assistant text, tool calls, totals.", "inputSchema": { "type": "object", "properties": { "timeout_s": { "type": "integer" } } } },
         { "name": "dev_screenshot", "description": "Capture the studio window (works when covered, does not take focus). Returns a PNG path.", "inputSchema": { "type": "object", "properties": {} } },
         { "name": "dev_ui_errors", "description": "Recent UI and core errors (newest first).", "inputSchema": { "type": "object", "properties": { "limit": { "type": "integer" } } } },
+        { "name": "dev_new_project", "description": "Create a project in a parent folder and open it. preset vertical; fps.", "inputSchema": { "type": "object", "properties": { "name": { "type": "string" }, "parent": { "type": "string" }, "fps": { "type": "integer" } }, "required": ["name", "parent"] } },
+        { "name": "dev_import", "description": "Import files into the open project (as a drop into the window).", "inputSchema": { "type": "object", "properties": { "files": { "type": "array", "items": { "type": "string" } } }, "required": ["files"] } },
         { "name": "dev_eval", "description": "Run JavaScript in the studio window (click a button to check a flow as the user would). No result is returned: look with dev_screenshot.", "inputSchema": { "type": "object", "properties": { "js": { "type": "string" } }, "required": ["js"] } },
         { "name": "dev_tab", "description": "Switch the open tab: home|projects|library|prepare|edit|export.", "inputSchema": { "type": "object", "properties": { "tab": { "type": "string" } }, "required": ["tab"] } },
     ])
@@ -75,6 +77,20 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Result<String, String>
             let limit = args["limit"].as_u64().unwrap_or(20) as usize;
             let list = crate::error::errors_recent();
             Ok(if list.is_empty() { "no errors".into() } else { list.iter().take(limit).map(|e| format!("{} {}: {}", e.at, e.code, e.message)).collect::<Vec<_>>().join("\n---\n") })
+        }
+        "dev_new_project" => {
+            let new = crate::projects::NewProject { name: args["name"].as_str().ok_or("name required")?.to_owned(), parent: args["parent"].as_str().ok_or("parent required")?.to_owned(), preset: crate::projects::Preset::Vertical, fps: args["fps"].as_u64().unwrap_or(60) as u32 };
+            let (dir, _) = crate::projects::create_on_disk(&new).map_err(|e| e.message)?;
+            let view = crate::project::open(app, &dir.display().to_string()).map_err(|e| e.message)?;
+            send(app, UiCommand::Tab { tab: "prepare".into() });
+            Ok(format!("opened {}", view.path))
+        }
+        "dev_import" => {
+            let (dir, _) = app.state::<crate::project::ProjectState>().context().ok_or("no project")?;
+            let files: Vec<String> = serde_json::from_value(args["files"].clone()).map_err(|e| e.to_string())?;
+            let r = crate::media::import(&dir, &files, crate::checks::find(app, crate::checks::ToolId::Ffprobe).as_deref()).map_err(|e| e.message)?;
+            let _ = tauri_specta::Event::emit(&crate::media::MediaChanged, app);
+            Ok(format!("imported {}, skipped {}", r.imported, r.skipped.len()))
         }
         "dev_eval" => {
             let js = args["js"].as_str().ok_or("js required")?;

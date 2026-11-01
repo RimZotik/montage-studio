@@ -21,6 +21,53 @@ function join(from: string, spec: string): string {
   return parts.join("/");
 }
 
+/** `export const a = 1, b = 2;` — сборщик экспортирует только первое имя, остальные теряются. Разделяем
+ *  на отдельные объявления верхнего уровня; запятые внутри значений и типов не трогаем. */
+export function splitExports(text: string): string {
+  const head = /(^|[\n;])([ \t]*)export[ \t]+(const|let|var)[ \t]+/g;
+  let out = "";
+  let from = 0;
+  for (let m = head.exec(text); m; m = head.exec(text)) {
+    const start = m.index + m[0].length;
+    const cuts: number[] = [];
+    let depth = 0;
+    let end = text.length;
+    for (let i = start; i < text.length; i++) {
+      const c = text[i] as string;
+      if (c === '"' || c === "'" || c === "`") {
+        for (i++; i < text.length && text[i] !== c; i++) if (text[i] === "\\") i++;
+      } else if (c === "/" && text[i + 1] === "/") {
+        while (i < text.length && text[i] !== "\n") i++;
+      } else if (c === "/" && text[i + 1] === "*") {
+        i = text.indexOf("*/", i + 2) + 1 || text.length;
+      } else if ("([{".includes(c)) depth++;
+      else if (")]}".includes(c)) depth--;
+      else if (depth === 0 && c === ",") {
+        if (/^\s*[A-Za-z_$][\w$]*\s*(:|=[^>=])/.test(text.slice(i + 1, i + 200))) cuts.push(i);
+      } else if (depth === 0 && c === ";") {
+        end = i;
+        break;
+      } else if (depth === 0 && c === "\n" && !/[,=(+\-*/&|?:]\s*$/.test(text.slice(start, i)) && !/^\s*[,.+\-*/&|?:]/.test(text.slice(i + 1, i + 80))) {
+        // Конец объявления без точки с запятой.
+        end = i;
+        break;
+      }
+    }
+    if (!cuts.length) continue;
+    out += text.slice(from, start);
+    let at = start;
+    for (const cut of cuts) {
+      out += `${text.slice(at, cut)};\n${m[2]}export ${m[3]} `;
+      at = cut + 1;
+      while (/\s/.test(text[at] ?? "")) at++;
+    }
+    out += text.slice(at, end);
+    from = end;
+    head.lastIndex = end;
+  }
+  return out + text.slice(from);
+}
+
 /** Загрузчик модулей проекта: `./lib/x` — из `smart/`, остальное — разрешенные библиотеки. `staticFile`
  *  указывает на файлы проекта: `media/...` как есть, короткий путь — в `media/assets/`. */
 export function smartLoader(sources: SmartSources, srcOf: (path: string) => string) {
@@ -40,7 +87,7 @@ export function smartLoader(sources: SmartSources, srcOf: (path: string) => stri
       module.exports = JSON.parse(text) as Record<string, unknown>;
       return module;
     }
-    const code = transform(text, { transforms: ["typescript", "jsx", "imports"], jsxRuntime: "classic", production: true, filePath: path }).code;
+    const code = transform(splitExports(text), { transforms: ["typescript", "jsx", "imports"], jsxRuntime: "classic", production: true, filePath: path }).code;
     const require = (spec: string) => {
       if (spec === "react") return React;
       if (spec === "remotion") return remotion;

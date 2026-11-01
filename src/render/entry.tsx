@@ -11,7 +11,7 @@ type Props = { sequence: Sequence; tracks: Track[]; clips: Clip[]; baseUrl: stri
 
 // Шрифты до первого кадра: иначе первые кадры рендера уходят с запасным шрифтом.
 const fontsReady = delayRender("fonts");
-void Promise.all(["700 20px Unbounded", "900 20px Unbounded", "600 20px Montserrat", "800 20px Montserrat"].map((f) => document.fonts.load(f, "АаZz09"))).finally(() => continueRender(fontsReady));
+void Promise.all(["700 20px Unbounded", "800 20px Unbounded", "900 20px Unbounded", "600 20px Montserrat", "700 20px Montserrat", "800 20px Montserrat"].map((f) => document.fonts.load(f, "АаZz09"))).finally(() => continueRender(fontsReady));
 
 function Timeline({ sequence, tracks, clips, baseUrl, smart }: Props) {
   return <TimelineComposition sequence={sequence} tracks={tracks} clips={clips} smart={smart} srcOf={(p) => `${baseUrl}/${p.split("/").map(encodeURIComponent).join("/")}`} />;

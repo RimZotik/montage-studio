@@ -3,7 +3,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowLeftToLine, Bookmark, Captions, CheckCheck, Copy, Eye, EyeOff, FileDown, FileUp, Link2, Lock, LockOpen, Magnet, Maximize2, MousePointer2, Plus, Scissors, SplitSquareHorizontal, Sparkles, Trash2, Type, Unlink, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type Clip, type MediaItem, type Op, type ProjectView, type Track, commands as ipc } from "@/shared/ipc/bindings";
+import { type AppError, type Clip, type MediaItem, type Op, type ProjectView, type Track, commands as ipc } from "@/shared/ipc/bindings";
 import { ContextMenu, type MenuItem } from "@/shared/ui/ContextMenu";
 import { type DragPayload, setDropTarget, useDragMedia } from "./dragMedia";
 import { snap, timecode } from "./time";
@@ -17,6 +17,8 @@ export type TimelineActions = {
   text: (frame?: number) => void;
   duplicate: () => void;
   selectAll: () => void;
+  copy: () => void;
+  paste: () => void;
 };
 
 type Props = {
@@ -37,10 +39,12 @@ type Props = {
   actions: TimelineActions;
   onOpenEffects: () => void;
   onNote: (text: string) => void;
+  onError: (e: AppError) => void;
 };
 
 type Drag = { mode: "move" | "trimL" | "trimR"; clip: Clip; ids: Set<string>; x0: number; track: string; start: number; duration: number; offset: number; moved: boolean; collapse: string[] | null };
 type Place = { track: string; start: number; duration: number };
+/** Рамка в координатах содержимого: при прокрутке начало остается у своего места на дорожке. */
 type Box = { x0: number; y0: number; x: number; y: number; base: string[]; moved: boolean };
 type Menu = { x: number; y: number; clip?: Clip; track?: Track; frame: number };
 
@@ -58,7 +62,7 @@ function fits(track: Track, p: DragPayload): boolean {
 /** Таймлайн: дорожки, клипы, линейка, головка, панель инструментов, рамка выделения, контекстные меню;
  *  перенос (и группы), обрезка краев, привязка, подстановка файлов и звуков. Правки уходят пакетами
  *  операций в ядро (одна отмена на действие). */
-export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, onSelect, apply, media, tool, onTool, snapOn, onSnap, actions, onOpenEffects, onNote }: Props) {
+export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, onSelect, apply, media, tool, onTool, snapOn, onSnap, actions, onOpenEffects, onNote, onError }: Props) {
   const { t } = useTranslation();
   const fps = view.project.sequence.fps;
   const scroller = useRef<HTMLDivElement>(null);
@@ -128,14 +132,14 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
       const [main, audio] = dropAt(p, x, y);
       if (!main) return;
       if (p.sound) {
-        void ipc.soundPlace(p.sound.id, main.start + Math.round(p.sound.hitAt * fps), main.track).then((r) => r.status === "error" && onNote(r.error.message));
+        void ipc.soundPlace(p.sound.id, main.start + Math.round(p.sound.hitAt * fps), main.track).then((r) => r.status === "error" && onError(r.error));
         return;
       }
       if (audio) void apply([{ op: "addLinked", videoTrack: main.track, audioTrack: audio.track, src: p.path ?? "", start: main.start, duration: main.duration, offset: null }], "add");
       else void apply([{ op: "addClip", track: main.track, kind: "media", src: p.path ?? null, text: null, start: main.start, duration: main.duration, offset: null }], "add");
     });
     return () => setDropTarget(null);
-  }, [dropAt, apply, fps, onNote]);
+  }, [dropAt, apply, fps, onError]);
   const ghosts = mediaDrag ? dropAt(mediaDrag.payload, mediaDrag.x, mediaDrag.y) : [];
 
   const onClipDown = (e: React.PointerEvent, clip: Clip, mode: Drag["mode"]) => {
@@ -154,7 +158,9 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     } else if (!had) onSelect(group);
     if (trackOf.get(clip.track)?.locked) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const moving = mode === "move" ? new Set(withLinks(had || e.shiftKey || e.ctrlKey ? [...selected, ...group] : group)) : new Set(group);
+    // Клипы закрепленных дорожек остаются на месте, остальные едут.
+    const free = (ids: string[]) => ids.filter((id) => !trackOf.get(view.clips.find((x) => x.id === id)?.track ?? "")?.locked);
+    const moving = mode === "move" ? new Set(free(withLinks(had || e.shiftKey || e.ctrlKey ? [...selected, ...group] : group))) : new Set(group);
     setDrag({ mode, clip, ids: moving, x0: e.clientX, track: clip.track, start: clip.start, duration: clip.duration, offset: clip.offset ?? 0, moved: false, collapse: had && !e.shiftKey && !e.ctrlKey ? group : null });
   };
 
@@ -163,10 +169,13 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     if (!el) return;
     const [l, r] = [Math.min(b.x0, b.x), Math.max(b.x0, b.x)];
     const [top, bottom] = [Math.min(b.y0, b.y), Math.max(b.y0, b.y)];
+    const o = el.getBoundingClientRect();
     const hit: string[] = [];
     el.querySelectorAll<HTMLElement>("[data-clip]").forEach((c) => {
       const q = c.getBoundingClientRect();
-      if (q.left < r && q.right > l && q.top < bottom && q.bottom > top && c.dataset.clip) hit.push(c.dataset.clip);
+      const [left, right] = [q.left - o.left + el.scrollLeft, q.right - o.left + el.scrollLeft];
+      const [up, down] = [q.top - o.top + el.scrollTop, q.bottom - o.top + el.scrollTop];
+      if (left < r && right > l && up < bottom && down > top && c.dataset.clip) hit.push(c.dataset.clip);
     });
     onSelect(withLinks([...b.base, ...hit]));
   };
@@ -174,16 +183,16 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
   const onMove = (e: React.PointerEvent) => {
     if (tool === "razor") setRazor(frameAt(e.clientX));
     if (box) {
-      const moved = box.moved || Math.hypot(e.clientX - box.x0, e.clientY - box.y0) > 3;
-      const next = { ...box, x: e.clientX, y: e.clientY, moved };
+      const el = scroller.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (e.clientX > r.right - 24) el.scrollLeft += 16;
+      else if (e.clientX < r.left + HEAD + 24) el.scrollLeft -= 16;
+      const [x, y] = [e.clientX - r.left + el.scrollLeft, e.clientY - r.top + el.scrollTop];
+      const moved = box.moved || Math.hypot(x - box.x0, y - box.y0) > 3;
+      const next = { ...box, x, y, moved };
       setBox(next);
       if (moved) selectInBox(next);
-      const el = scroller.current;
-      if (el) {
-        const r = el.getBoundingClientRect();
-        if (e.clientX > r.right - 24) el.scrollLeft += 16;
-        else if (e.clientX < r.left + HEAD + 24) el.scrollLeft -= 16;
-      }
       return;
     }
     if (!drag) return;
@@ -229,7 +238,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     for (const c of view.clips) {
       if (!drag.ids.has(c.id)) continue;
       if (drag.mode === "move") m.set(c.id, { track: c.id === drag.clip.id ? drag.track : c.track, start: c.start + delta, duration: c.duration });
-      else m.set(c.id, { track: c.track, start: drag.start, duration: drag.duration });
+      else m.set(c.id, { track: c.track, start: c.start + delta, duration: Math.max(1, c.duration + drag.duration - drag.clip.duration) });
     }
     return m;
   }, [drag, pending, view.clips]);
@@ -269,8 +278,12 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
 
   const onLaneDown = (e: React.PointerEvent) => {
     if (e.button !== 0 || e.target !== e.currentTarget || tool !== "select") return;
-    scroller.current?.setPointerCapture(e.pointerId);
-    setBox({ x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, base: e.shiftKey || e.ctrlKey ? selected : [], moved: false });
+    const el = scroller.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+    const r = el.getBoundingClientRect();
+    const [x, y] = [e.clientX - r.left + el.scrollLeft, e.clientY - r.top + el.scrollTop];
+    setBox({ x0: x, y0: y, x, y, base: e.shiftKey || e.ctrlKey ? selected : [], moved: false });
   };
 
   // Колесо — по времени; Shift+колесо — по дорожкам; Ctrl или Alt+колесо — масштаб к курсору.
@@ -440,11 +453,11 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
               label: t("edit.captionMode.import"),
               icon: FileUp,
               run: () =>
-                void openDialog({ filters: [{ name: "Subtitles", extensions: ["srt", "vtt", "ass"] }] }).then((p) => {
-                  if (typeof p === "string") void ipc.captionsImport(p).then((r) => onNote(r.status === "ok" ? t("edit.captionMode.imported", { count: r.data }) : r.error.message));
+                void openDialog({ filters: [{ name: t("edit.track.captions"), extensions: ["srt", "vtt", "ass"] }] }).then((p) => {
+                  if (typeof p === "string") void ipc.captionsImport(p).then((r) => (r.status === "ok" ? onNote(t("edit.captionMode.imported", { count: r.data })) : onError(r.error)));
                 }),
             },
-            { label: t("edit.captionMode.save"), icon: FileDown, run: () => void ipc.captionsSave().then((r) => onNote(r.status === "ok" ? t("edit.captionMode.saved") : r.error.message)) },
+            { label: t("edit.captionMode.save"), icon: FileDown, run: () => void ipc.captionsSave().then((r) => (r.status === "ok" ? onNote(t("edit.captionMode.saved")) : onError(r.error))) },
             "-",
           ] as MenuItem[])
         : []),
@@ -483,9 +496,8 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
 
   const tip = (key: string, keys?: string) => (keys ? `${t(`edit.tools.${key}`)} (${keys})` : t(`edit.tools.${key}`));
   const scrollX = scroller.current?.scrollLeft ?? 0;
-  const rect = scroller.current?.getBoundingClientRect();
-  const boxLeft = box && rect ? Math.max(scrollX + HEAD, Math.min(box.x0, box.x) - rect.left + scrollX) : 0;
-  const boxRight = box && rect ? Math.max(scrollX + HEAD, Math.max(box.x0, box.x) - rect.left + scrollX) : 0;
+  const boxLeft = box ? Math.max(scrollX + HEAD, Math.min(box.x0, box.x)) : 0;
+  const boxRight = box ? Math.max(scrollX + HEAD, Math.max(box.x0, box.x)) : 0;
 
   return (
     <div className="tlwrap">
@@ -548,9 +560,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
           {lanes}
           {frame * zoom >= view0.left - 1 && <div className="playhead" style={{ left: HEAD + frame * zoom }} />}
           {tool === "razor" && razor != null && razor * zoom >= view0.left && <div className="razorline" style={{ left: HEAD + razor * zoom }} />}
-          {box?.moved && rect && (
-            <div className="tlbox" style={{ left: boxLeft, width: boxRight - boxLeft, top: Math.min(box.y0, box.y) - rect.top + (scroller.current?.scrollTop ?? 0), height: Math.abs(box.y - box.y0) }} />
-          )}
+          {box?.moved && <div className="tlbox" style={{ left: boxLeft, width: boxRight - boxLeft, top: Math.min(box.y0, box.y), height: Math.abs(box.y - box.y0) }} />}
         </div>
         {view.clips.length === 0 && <div className="tl-empty">{t("edit.empty")}</div>}
       </div>

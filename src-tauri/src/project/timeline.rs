@@ -287,6 +287,13 @@ fn next_id(clips: &[Clip]) -> String {
     format!("c{}", max + 1)
 }
 
+/// Свободный ID связки: больше всех занятых, даже если связку задали без новых клипов.
+fn next_link(clips: &[Clip]) -> String {
+    let max = clips.iter().filter_map(|c| c.link.as_deref()?.strip_prefix('l')?.parse::<u32>().ok()).max().unwrap_or(0);
+    let by_clip = clips.iter().filter_map(|c| c.id.strip_prefix('c')?.parse::<u32>().ok()).max().unwrap_or(0);
+    format!("l{}", max.max(by_clip) + 1)
+}
+
 fn bad(msg: impl Into<String>) -> AppError {
     AppError::new("invalidEdit", msg)
 }
@@ -356,7 +363,7 @@ impl Edit<'_> {
                 self.unlocked(video_track)?;
                 self.unlocked(audio_track)?;
                 let v = next_id(self.clips);
-                let link = format!("l{}", v.trim_start_matches('c'));
+                let link = next_link(self.clips);
                 let base = Clip { id: v.clone(), track: video_track.clone(), kind: ClipKind::Media, src: Some(src.clone()), text: None, start: *start, duration: *duration, offset: offset.unwrap_or(0), link: Some(link), props: ClipProps::default(), effects: vec![] };
                 self.clips.push(base.clone());
                 let a = next_id(self.clips);
@@ -391,16 +398,16 @@ impl Edit<'_> {
                     let t = self.clip_mut(g)?.track.clone();
                     self.unlocked(&t)?;
                 }
+                // Связанные клипы могут быть разными файлами разной длины: всем — то же изменение
+                // границ, а не те же значения.
+                let lead = self.clip_mut(id)?.clone();
+                let (ds, dd, doff) = (start.map_or(0, |s| i64::from(s) - i64::from(lead.start)), duration.map_or(0, |d| i64::from(d) - i64::from(lead.duration)), offset.map_or(0, |o| i64::from(o) - i64::from(lead.offset)));
                 for g in &group {
                     let c = self.clip_mut(g)?;
-                    if let Some(s) = start {
-                        c.start = *s;
-                    }
-                    if let Some(d) = duration {
-                        c.duration = *d;
-                    }
-                    if let (Some(o), ClipKind::Media) = (offset, c.kind) {
-                        c.offset = *o;
+                    c.start = u32::try_from(i64::from(c.start) + ds).unwrap_or(0);
+                    c.duration = u32::try_from((i64::from(c.duration) + dd).max(1)).unwrap_or(1);
+                    if c.kind == ClipKind::Media {
+                        c.offset = u32::try_from(i64::from(c.offset) + doff).unwrap_or(0);
                     }
                 }
                 self.raise(&group);
@@ -408,7 +415,7 @@ impl Edit<'_> {
             }
             Op::SplitClip { id, at } => {
                 let group = self.group(id)?;
-                let right_link = format!("l{}", next_id(self.clips).trim_start_matches('c'));
+                let right_link = next_link(self.clips);
                 let mut created = Vec::new();
                 for g in &group {
                     let c = self.clip_mut(g)?.clone();
@@ -513,8 +520,10 @@ impl Edit<'_> {
                 for s in sources {
                     self.unlocked(&s.track)?;
                     let id = next_id(self.clips);
-                    let link = s.link.as_ref().map(|l| links.entry(l.clone()).or_insert_with(|| format!("l{}", id.trim_start_matches('c'))).clone());
-                    self.clips.push(Clip { id: id.clone(), start: s.start - first + target, link, ..s });
+                    let fresh = next_link(self.clips);
+                    let link = s.link.as_ref().map(|l| links.entry(l.clone()).or_insert(fresh).clone());
+                    let start = (s.start - first).checked_add(target).ok_or_else(|| bad("duplicate is too far"))?;
+                    self.clips.push(Clip { id: id.clone(), start, link, ..s });
                     made.push(id);
                 }
                 Ok(made)
@@ -523,6 +532,10 @@ impl Edit<'_> {
                 let mut all: Vec<String> = Vec::new();
                 for id in ids {
                     all.extend(self.group(id)?);
+                }
+                for id in &all {
+                    let t = self.clip_mut(id)?.track.clone();
+                    self.unlocked(&t)?;
                 }
                 if *top {
                     self.raise(&all);
@@ -538,7 +551,11 @@ impl Edit<'_> {
                 for id in ids {
                     all.extend(self.group(id)?);
                 }
-                let link = (*linked && all.len() > 1).then(|| format!("l{}", next_id(self.clips).trim_start_matches('c')));
+                for id in &all {
+                    let t = self.clip_mut(id)?.track.clone();
+                    self.unlocked(&t)?;
+                }
+                let link = (*linked && all.len() > 1).then(|| next_link(self.clips));
                 for id in &all {
                     self.clip_mut(id)?.link.clone_from(&link);
                 }
@@ -699,6 +716,23 @@ mod tests {
         assert!(run(&[media("v2", 0, 10), Op::RemoveTrack { id: "v2".into() }]).2.is_err(), "с клипами — нельзя");
         assert!(run(&[Op::RemoveTrack { id: "v2".into() }]).2.is_ok());
         assert!(run(&[Op::RemoveTrack { id: "v2".into() }, Op::RemoveTrack { id: "v1".into() }]).2.is_err(), "последнюю видеодорожку — нельзя");
+    }
+
+    #[test]
+    fn linked_clips_of_different_files_trim_by_the_same_change() {
+        let sound = Op::AddClip { track: "a1".into(), kind: ClipKind::Media, src: Some("media/music/m.wav".into()), text: None, start: 0, duration: 500, offset: None };
+        let (_, clips, r) = run(&[media("v1", 100, 100), sound, Op::SetLink { ids: vec!["c1".into(), "c2".into()], linked: true }, Op::TrimClip { id: "c1".into(), start: Some(110), duration: Some(90), offset: None }]);
+        r.unwrap();
+        let music = clips.iter().find(|c| c.id == "c2").unwrap();
+        assert_eq!((music.start, music.duration), (10, 490), "музыка не принимает границы видео");
+    }
+
+    #[test]
+    fn new_link_never_joins_an_existing_one() {
+        let add = Op::AddLinked { video_track: "v1".into(), audio_track: "a1".into(), src: "media/footage/a.mp4".into(), start: 0, duration: 10, offset: None };
+        let (_, clips, r) = run(&[media("v1", 0, 5), media("v1", 5, 5), Op::SetLink { ids: vec!["c1".into(), "c2".into()], linked: true }, add]);
+        r.unwrap();
+        assert_ne!(clips[0].link, clips[2].link, "новая связка не вливается в старую");
     }
 
     #[test]

@@ -150,7 +150,11 @@
     "renderEngineMissing": "The render engine is not installed: install it on the Export page",
     "emptyTimeline": "The timeline has no clips",
     "exportBusy": "An export is already running",
-    "packReadonly": "The base pack cannot be changed: save a copy"
+    "packReadonly": "The base pack cannot be changed: save a copy",
+    "noCaptions": "The captions track is empty",
+    "badCaptions": "Could not read the captions file: use .srt, .vtt or .ass with lines",
+    "notExport": "This file is not among the finished videos",
+    "badPreview": "A preview can only use a frame of this project"
   },
   "install": {
     "install": "Install · {{mb}} MB",
@@ -364,6 +368,14 @@
       "zoom": {
         "k": "Ctrl+wheel",
         "v": "zoom"
+      },
+      "tools": {
+        "k": "V / C / N",
+        "v": "select / blade / snapping"
+      },
+      "copy": {
+        "k": "Ctrl+C / V / D",
+        "v": "copy / paste at playhead / duplicate"
       }
     },
     "claudeBusy": "Claude is working on the timeline — wait or stop",
@@ -407,7 +419,8 @@
       "save": "Save captions files",
       "imported": "Lines loaded: {{count}}",
       "saved": "Captions files saved next to the videos"
-    }
+    },
+    "manySelected": "{{count}} clips selected. Properties belong to one clip; moving, splitting and deleting work on all."
   },
   "crash": {
     "title": "The page did not open",
@@ -434,7 +447,7 @@
     "inPack": "Pack: {{pack}}",
     "revision": "version {{n}}",
     "uses": "used {{count}} times",
-    "applied": "Effects",
+    "applied": "Applied to clips: {{count}}",
     "toggle": "Turn on or off",
     "saveSetting": "Save this setting to the library",
     "selectClip": "Select a clip or drag the effect onto it",
@@ -491,7 +504,9 @@
       "sound": "Place at playhead",
       "style": "Apply style",
       "tool": "Open panel"
-    }
+    },
+    "copySuffix": "copy",
+    "deletePackSure": "Really delete? Items move to Main"
   },
   "export": {
     "title": "Export the video",

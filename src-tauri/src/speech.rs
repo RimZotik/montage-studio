@@ -71,15 +71,14 @@ pub fn phrases(words: &[Word], max_words: usize, max_chars: usize, gap_ms: u32) 
     let mut groups: Vec<Vec<&Word>> = Vec::new();
     for w in words {
         let (mut joins, mut moved) = (false, None);
-        if let Some(g) = groups.last_mut() {
-            if let Some(&prev) = g.last() {
+        if let Some(g) = groups.last_mut()
+            && let Some(&prev) = g.last() {
                 let near = !ends_sentence(&prev.text) && w.start.saturating_sub(prev.end) <= gap_ms;
                 joins = near && length(g) + w.text.chars().count() <= max_chars.max(1) && (g.len() < max_words.max(1) || glue(&prev.text));
                 if !joins && near && g.len() > 1 && glue(&prev.text) {
                     moved = g.pop();
                 }
             }
-        }
         match groups.last_mut() {
             Some(g) if joins => g.push(w),
             _ => groups.push(moved.into_iter().chain(std::iter::once(w)).collect()),

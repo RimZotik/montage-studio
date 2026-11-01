@@ -104,7 +104,8 @@ pub fn pick_model(setting: &str, text: &str, clips: usize, current: Option<&str>
         return setting.to_owned();
     }
     let low = text.to_lowercase();
-    let plans = ["план", "придум", "сценари", "идея", "идею", "замысел", "концепц", "стиль", "plan", "idea", "script", "concept", "style"].iter().any(|w| low.contains(w));
+    // По целым словам: "plan" не должен срабатывать в "explanation".
+    let plans = low.split(|c: char| !c.is_alphanumeric()).any(|w| ["план", "придум", "сценари", "замысел", "концепц"].iter().any(|s| w.starts_with(s)) || ["идея", "идею", "идеи", "plan", "plans", "idea", "ideas", "script", "concept"].contains(&w));
     if plans || clips == 0 || text.chars().count() > 600 {
         return "opus".into();
     }
@@ -253,7 +254,11 @@ pub fn send(app: &AppHandle, text: &str, kind: &str) -> AppResult<()> {
     // Сменилась модель в настройках — тоже перезапуск (с той же сессией).
     let setting = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).unwrap_or_default();
     let current = chat.session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().map(|s| s.model.clone());
-    let model = pick_model(&setting, text, doc.timeline.clips.len(), current.as_deref());
+    // Смена модели перезапускает процесс: пока идет ход, модель не меняется, иначе ход оборвется.
+    let model = match current.as_deref() {
+        Some(m) if chat.is_busy() => m.to_owned(),
+        _ => pick_model(&setting, text, doc.timeline.clips.len(), current.as_deref()),
+    };
     let hash = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -338,6 +343,16 @@ mod tests {
 
     /// Живой ход в настоящем `claude` (подписка, ~0.01 $ оценки): правка правил разрешена, правка
     /// вне `rules/` — запрещена. `cargo test live_chat_turn -- --ignored --nocapture`.
+    #[test]
+    fn auto_model_follows_the_task_not_substrings() {
+        assert_eq!(pick_model("haiku", "план", 0, None), "haiku", "выбранная вручную не меняется");
+        assert_eq!(pick_model("auto", "придумай сценарий", 40, None), "opus");
+        assert_eq!(pick_model("auto", "что угодно", 0, None), "opus", "новый проект");
+        assert_eq!(pick_model("auto", "разрежь клип", 40, Some("opus")), "sonnet");
+        assert_eq!(pick_model("auto", "add an explanation and a description", 40, None), "sonnet", "подстроки не считаются");
+        assert_eq!(pick_model("auto", "поменяй стиль текста", 40, None), "sonnet");
+    }
+
     #[test]
     #[ignore = "живой запрос к Claude"]
     fn live_chat_turn() {

@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { ChevronLeft, Download, LayoutGrid, Loader, Play, Search, Square, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type LibraryRow, type LibraryView, type ProjectView, type SpeechModel, commands as ipc, events } from "@/shared/ipc/bindings";
 import { Library } from "@/pages/Library/Library";
@@ -11,19 +11,47 @@ import { startDrag } from "./dragMedia";
 const FILTERS = ["all", "tool", "video", "audio", "text", "transition", "sound", "style"] as const;
 type Filter = (typeof FILTERS)[number];
 
+// Один проигрыватель на всю программу: и список, и каталог видят, что играет.
 let player: HTMLAudioElement | null = null;
-/** Послушать звук библиотеки; повторный вызов с тем же звуком — остановить. Одновременно один. */
-export function playSound(id: string, onState: (playing: string | null) => void, onError: (e: AppError) => void, current: string | null) {
+let playingId: string | null = null;
+let ask = 0;
+const listeners = new Set<() => void>();
+function setPlayingId(id: string | null) {
+  playingId = id;
+  for (const l of listeners) l();
+}
+
+export function useSoundPlaying(): string | null {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => playingId,
+  );
+}
+
+export function stopSound() {
+  ask++;
   player?.pause();
   player = null;
-  if (current === id) return onState(null);
+  setPlayingId(null);
+}
+
+/** Послушать звук библиотеки; тот же звук еще раз — остановить. Одновременно один. */
+export function playSound(id: string, onError: (e: AppError) => void) {
+  const same = playingId === id;
+  stopSound();
+  if (same) return;
+  const mine = ++ask;
   void ipc.soundPreview(id).then((r) => {
+    if (mine !== ask) return;
     if (r.status === "error") return onError(r.error);
     const a = new Audio(convertFileSrc(r.data));
     player = a;
-    a.onended = () => onState(null);
-    void a.play();
-    onState(id);
+    a.onended = () => setPlayingId(null);
+    setPlayingId(id);
+    void a.play().catch(() => setPlayingId(null));
   });
 }
 
@@ -45,8 +73,14 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
   const [model, setModel] = useState<SpeechModel | null>(null);
   const [needModel, setNeedModel] = useState(false);
   const [ghost, setGhost] = useState<{ name: string; x: number; y: number } | null>(null);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const playing = useSoundPlaying();
   const [catalog, setCatalog] = useState(false);
+  const [catNote, setCatNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!catNote) return;
+    const t = setTimeout(() => setCatNote(null), 3000);
+    return () => clearTimeout(t);
+  }, [catNote]);
   const clickTimer = useRef(0);
 
   const load = useCallback(() => void ipc.libraryView().then((r) => (r.status === "ok" ? setLib(r.data) : onError(r.error))), [onError]);
@@ -70,7 +104,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
       void offSpeech.then((f) => f());
       void offComp.then((f) => f());
       window.clearTimeout(clickTimer.current);
-      player?.pause();
+      stopSound();
     };
   }, [load]);
 
@@ -88,6 +122,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
       setNote(null);
       const r = await ipc.effectApply(row.item.id, params, clips);
       if (r.status === "error") onError(r.error);
+      else setNote(t("library.applied", { count: clips.length }));
     },
     [onError, t],
   );
@@ -170,7 +205,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
   };
 
   const onClickRow = (r: LibraryRow) => {
-    if (r.item.kind === "sound") return playSound(r.item.id, setPlaying, onError, playing);
+    if (r.item.kind === "sound") return playSound(r.item.id, onError);
     // Карточка заменяет список: ждем, не будет ли второго щелчка.
     window.clearTimeout(clickTimer.current);
     clickTimer.current = window.setTimeout(() => showCard(r), 230);
@@ -228,8 +263,8 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
                   useItem(r);
                 }}
               >
-                {r.item.kind === "sound" && (playing === r.item.id ? <Square size={11} strokeWidth={2} /> : <Play size={11} strokeWidth={2} />)}
                 <span className="fxname">{loc(r.item.name, lang)}</span>
+                {r.item.kind === "sound" && (playing === r.item.id ? <Square size={11} strokeWidth={2} /> : <Play size={11} strokeWidth={2} />)}
                 <TargetIcons targets={r.item.targets ?? []} />
               </div>
             ))}
@@ -300,13 +335,14 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
           <div className="catbox">
             <div className="cathead">
               <b>{t("library.catalog")}</b>
+              {catNote && <span className="catnote">{catNote}</span>}
               <button className="iconbtn" title={t("library.close")} onClick={() => setCatalog(false)}>
                 <X size={15} strokeWidth={1.75} />
               </button>
             </div>
             <Library
               onError={onError}
-              onToast={setNote}
+              onToast={setCatNote}
               onUse={(row) => {
                 if (row.item.kind === "tool") {
                   setCatalog(false);

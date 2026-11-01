@@ -635,3 +635,12 @@ body.dragno, body.dragno * { cursor: not-allowed !important; }
 .exdir > svg { flex: none; color: var(--muted); }
 .exdir > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; line-height: 1.2; }
 .iconbtn.danger { color: #c0392b; background: #fbe9e7; }
+
+.libgrid { grid-auto-rows: max-content; }
+.libcard { min-height: 0; overflow: hidden; }
+.libcard > * { flex: none; }
+.libcard .libdesc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ibtns { flex-wrap: wrap; }
+.cathead b { margin-right: auto; }
+.cathead { gap: 12px; }
+.catnote { font-size: 12px; color: var(--accent-ink); line-height: 1.2; }

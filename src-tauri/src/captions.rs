@@ -47,21 +47,51 @@ pub fn soft_track(doc: &Snapshot) -> Option<&Track> {
     captions_track(doc).filter(|t| t.caption_mode == CaptionMode::File)
 }
 
-/// Реплики дорожки. На экране верхняя заменяет нижнюю, поэтому в файле они не пересекаются.
+/// Реплики дорожки — как на экране: верхний клип (позже в списке) заменяет нижний на время наложения,
+/// нижний после него продолжается.
 pub fn cues_of(clips: &[Clip], track: &str, fps: u32) -> Vec<Cue> {
-    let mut list: Vec<&Clip> = clips.iter().filter(|c| c.track == track && c.kind == ClipKind::Caption && c.text.as_deref().is_some_and(|t| !t.trim().is_empty())).collect();
-    list.sort_by_key(|c| c.start);
+    let on_track: Vec<&Clip> = clips.iter().filter(|c| c.track == track && c.kind == ClipKind::Caption).collect();
     let fps = f64::from(fps.max(1));
-    let mut out: Vec<Cue> = Vec::new();
-    for c in list {
-        let start = f64::from(c.start) / fps;
-        if let Some(last) = out.last_mut() {
-            last.end = last.end.min(start);
+    let mut pieces: Vec<(u32, u32, &str)> = Vec::new();
+    for (i, c) in on_track.iter().enumerate() {
+        let Some(text) = c.text.as_deref().filter(|t| !t.trim().is_empty()) else { continue };
+        let mut left = vec![(c.start, c.end())];
+        for h in on_track.iter().skip(i + 1).filter(|h| h.text.as_deref().is_some_and(|t| !t.trim().is_empty())) {
+            left = left
+                .into_iter()
+                .flat_map(|(a, b)| {
+                    if h.end() <= a || h.start >= b {
+                        return vec![(a, b)];
+                    }
+                    let mut rest = Vec::new();
+                    if h.start > a {
+                        rest.push((a, h.start));
+                    }
+                    if h.end() < b {
+                        rest.push((h.end(), b));
+                    }
+                    rest
+                })
+                .collect();
         }
-        out.push(Cue { start, end: f64::from(c.end()) / fps, text: c.text.clone().unwrap_or_default(), style: None });
+        pieces.extend(left.into_iter().map(|(a, b)| (a, b, text)));
     }
-    out.retain(|c| c.end > c.start);
-    out
+    pieces.sort_by_key(|p| p.0);
+    pieces.into_iter().filter(|p| p.1 > p.0).map(|(a, b, text)| Cue { start: f64::from(a) / fps, end: f64::from(b) / fps, text: text.to_owned(), style: None }).collect()
+}
+
+/// Текст реплики без того, что сломает разметку файла.
+fn cue_text(text: &str) -> String {
+    let mut lines: Vec<String> = text.lines().map(|l| l.replace("-->", "→")).filter(|l| !l.trim().is_empty()).collect();
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines.join("\n")
+}
+
+/// Значение оформления без знаков разметки: имя шрифта и цвет идут в строку стиля.
+fn clean(value: &str) -> String {
+    value.chars().filter(|c| !matches!(c, ',' | '{' | '}' | ';' | ':' | '\n' | '\r')).collect()
 }
 
 fn clock(seconds: f64, comma: bool) -> String {
@@ -72,7 +102,7 @@ fn clock(seconds: f64, comma: bool) -> String {
 pub fn to_srt(cues: &[Cue]) -> String {
     let mut s = String::new();
     for (i, c) in cues.iter().enumerate() {
-        let _ = write!(s, "{}\n{} --> {}\n{}\n\n", i + 1, clock(c.start, true), clock(c.end, true), c.text);
+        let _ = write!(s, "{}\n{} --> {}\n{}\n\n", i + 1, clock(c.start, true), clock(c.end, true), cue_text(&c.text));
     }
     s
 }
@@ -81,19 +111,19 @@ pub fn to_vtt(cues: &[Cue], look: &Look) -> String {
     let mut s = String::from("WEBVTT\n\n");
     let mut css = String::new();
     if let Some(c) = &look.color {
-        let _ = write!(css, "color: {c}; ");
+        let _ = write!(css, "color: {}; ", clean(c));
     }
     if let Some(f) = &look.font {
-        let _ = write!(css, "font-family: {f}; ");
+        let _ = write!(css, "font-family: {}; ", clean(f));
     }
     if let Some(b) = &look.background {
-        let _ = write!(css, "background-color: {b}; ");
+        let _ = write!(css, "background-color: {}; ", clean(b));
     }
     if !css.is_empty() {
         let _ = write!(s, "STYLE\n::cue {{ {} }}\n\n", css.trim_end());
     }
     for c in cues {
-        let _ = write!(s, "{} --> {}\n{}\n\n", clock(c.start, false), clock(c.end, false), c.text);
+        let _ = write!(s, "{} --> {}\n{}\n\n", clock(c.start, false), clock(c.end, false), cue_text(&c.text));
     }
     s
 }
@@ -118,7 +148,7 @@ fn ass_clock(seconds: f64) -> String {
 }
 
 pub fn to_ass(cues: &[Cue], look: &Look, width: u32, height: u32) -> String {
-    let font = look.font.as_deref().unwrap_or("Arial");
+    let font = look.font.as_deref().map_or_else(|| "Arial".to_owned(), clean);
     let size = look.size.unwrap_or(64.0);
     let color = look.color.as_deref().and_then(ass_color).unwrap_or_else(|| "&H00FFFFFF".into());
     let back = look.background.as_deref().and_then(ass_color);
@@ -131,7 +161,7 @@ pub fn to_ass(cues: &[Cue], look: &Look, width: u32, height: u32) -> String {
         u32::try_from(u64::from(height) * 34 / 100).unwrap_or(0),
     );
     for c in cues {
-        let _ = writeln!(s, "Dialogue: 0,{},{},Default,{}", ass_clock(c.start), ass_clock(c.end), c.text.replace('\n', "\\N"));
+        let _ = writeln!(s, "Dialogue: 0,{},{},Default,{}", ass_clock(c.start), ass_clock(c.end), cue_text(&c.text).replace('\n', "\\N"));
     }
     s
 }
@@ -293,12 +323,35 @@ pub fn save_all(app: &AppHandle) -> AppResult<Vec<String>> {
     write_beside(&doc, &out.join(format!("{}.mp4", crate::export::safe_name(&doc.project.name))))
 }
 
+/// Реплики из файла для дорожки: время в разумных пределах; реплики, идущие одновременно, — одной
+/// (на дорожке верхняя заменила бы нижнюю, и текст пропал бы).
+fn settle(mut cues: Vec<Cue>) -> Vec<Cue> {
+    const DAY: f64 = 86_400.0;
+    cues.retain(|c| c.start.is_finite() && c.end.is_finite() && c.start >= 0.0 && c.end <= DAY);
+    cues.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let mut out: Vec<Cue> = Vec::new();
+    for c in cues {
+        match out.last_mut() {
+            Some(last) if c.start < last.end => {
+                last.text.push('\n');
+                last.text.push_str(&c.text);
+                last.end = last.end.max(c.end);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Загрузить файл субтитров на дорожку вместо того, что на ней было (один шаг отмены).
 pub fn import_file(app: &AppHandle, path: &str) -> AppResult<usize> {
     let file = PathBuf::from(path);
     let ext = file.extension().and_then(|x| x.to_str()).unwrap_or("").to_lowercase();
     if !EXTENSIONS.contains(&ext.as_str()) {
         return Err(AppError::new("badCaptions", format!("{ext}: need .srt, .vtt or .ass")));
+    }
+    if std::fs::metadata(&file)?.len() > 20 * 1024 * 1024 {
+        return Err(AppError::new("badCaptions", "the file is too large for captions"));
     }
     let raw = std::fs::read(&file)?;
     let raw = String::from_utf8_lossy(&raw);
@@ -308,6 +361,7 @@ pub fn import_file(app: &AppHandle, path: &str) -> AppResult<usize> {
         let (c, l) = parse_text_cues(&raw);
         (c, HashMap::from([(String::new(), l)]))
     };
+    let cues = settle(cues);
     if cues.is_empty() {
         return Err(AppError::new("badCaptions", "no captions in the file"));
     }
@@ -340,15 +394,26 @@ pub fn import_file(app: &AppHandle, path: &str) -> AppResult<usize> {
 /// Кадр для предпросмотра на карточке: уменьшается и встраивается в описание элемента.
 pub fn thumbnail_data(app: &AppHandle, file: &Path) -> AppResult<String> {
     let ffmpeg = find(app, ToolId::Ffmpeg).ok_or_else(|| AppError::new("ffmpegMissing", "ffmpeg not found"))?;
-    let tmp = std::env::temp_dir().join(format!("studio-preview-{}.jpg", std::process::id()));
-    let mut cmd = std::process::Command::new(ffmpeg);
-    cmd.args(["-v", "error", "-y", "-i"]).arg(file).args(["-vf", "scale=320:-2", "-frames:v", "1", "-q:v", "6"]).arg(&tmp);
-    let r = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()))?;
-    if !r.status.success() {
-        return Err(AppError::new("ffmpeg", String::from_utf8_lossy(&r.stderr).into_owned()));
+    // Только кадры своего проекта: не адреса и не чужие файлы.
+    let (dir, _) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
+    let inside = file.canonicalize().ok().zip(dir.canonicalize().ok()).is_some_and(|(f, d)| f.starts_with(d));
+    if !inside {
+        return Err(AppError::new("badPreview", "use a frame from render_frame of this project"));
     }
-    let raw = std::fs::read(&tmp)?;
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let tmp = std::env::temp_dir().join(format!("studio-preview-{}-{}.jpg", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let mut cmd = std::process::Command::new(ffmpeg);
+    cmd.args(["-v", "error", "-y", "-protocol_whitelist", "file", "-i"]).arg(file).args(["-vf", "scale=320:-2", "-frames:v", "1", "-q:v", "6"]).arg(&tmp);
+    let r = crate::media::quiet(&mut cmd).output().map_err(|e| AppError::new("ffmpeg", e.to_string()));
+    let raw = r.and_then(|r| {
+        if r.status.success() {
+            Ok(std::fs::read(&tmp)?)
+        } else {
+            Err(AppError::new("ffmpeg", String::from_utf8_lossy(&r.stderr).into_owned()))
+        }
+    });
     let _ = std::fs::remove_file(&tmp);
+    let raw = raw?;
     Ok(format!("data:image/jpeg;base64,{}", base64::engine::general_purpose::STANDARD.encode(raw)))
 }
 
@@ -380,6 +445,13 @@ mod tests {
         assert_eq!(cues.len(), 2);
         assert!((cues[0].end - 1.0).abs() < 1e-9, "нижнюю заменила верхняя");
         assert!((cues[1].start - 1.0).abs() < 1e-9);
+        // Короткая верхняя внутри длинной: длинная продолжается после нее, как на экране.
+        let inner = cues_of(&[cap("a", 0, 90, "длинная"), cap("b", 30, 30, "короткая")], "s1", 30);
+        assert_eq!(inner.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), ["длинная", "короткая", "длинная"]);
+        // Порядок задает наложение, а не время начала.
+        let under = cues_of(&[cap("b", 30, 30, "поздняя"), cap("a", 0, 60, "верхняя")], "s1", 30);
+        assert_eq!(under.len(), 1);
+        assert_eq!(under[0].text, "верхняя");
     }
 
     #[test]
@@ -412,6 +484,29 @@ mod tests {
         assert_eq!(back[0].text, "раз, два\nтри");
         assert_eq!((back[0].start, back[0].end), (0.5, 2.0));
         assert_eq!(styles["Default"], look);
+    }
+
+    #[test]
+    fn hostile_values_do_not_break_the_files() {
+        let cues = vec![Cue { start: 0.0, end: 1.0, text: "раз --> два\n\nтри".into(), style: None }];
+        let srt = to_srt(&cues);
+        assert_eq!(parse_text_cues(&srt).0[0].text, "раз → два\nтри");
+        let ass = to_ass(&cues, &Look { font: Some("A,B\nStyle: x".into()), ..Look::default() }, 1080, 1920);
+        assert_eq!(ass.matches("
+Style:").count(), 1);
+        assert!(ass.contains("Style: Default,ABStyle x,"));
+        let (_, read) = parse_text_cues(&to_vtt(&cues, &Look { color: Some("red; } body {".into()), ..Look::default() }));
+        assert_eq!(read.color.as_deref(), Some("red  body"));
+    }
+
+    #[test]
+    fn imported_time_is_bounded_and_simultaneous_lines_join() {
+        let far = Cue { start: 3.6e11, end: 3.6e11 + 1.0, text: "далеко".into(), style: None };
+        let a = Cue { start: 1.0, end: 2.0, text: "верх".into(), style: None };
+        let b = Cue { start: 1.0, end: 2.0, text: "низ".into(), style: None };
+        let out = settle(vec![far, a, b]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].text, "верх\nниз");
     }
 
     #[test]

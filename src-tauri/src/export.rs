@@ -353,13 +353,11 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
                 j.files.push(out2.display().to_string());
                 let _ = journal_write(d, &j);
             }
-            if let Some(doc) = app2.state::<ProjectState>().context().map(|c| c.1) {
-                if crate::captions::soft_track(&doc).is_some() {
-                    if let Err(e) = crate::captions::write_beside(&doc, &out2) {
+            if let Some(doc) = app2.state::<ProjectState>().context().map(|c| c.1)
+                && crate::captions::soft_track(&doc).is_some()
+                    && let Err(e) = crate::captions::write_beside(&doc, &out2) {
                         log::warn!("caption files: {}", e.message);
                     }
-                }
-            }
             log::info!("export done: {}", out2.display());
             emit(&app2, "done", 1.0, None, Some(out2.display().to_string()));
         } else {
@@ -391,20 +389,27 @@ pub fn still(app: &AppHandle, frame: u32, scale: f64) -> AppResult<PathBuf> {
     Ok(out)
 }
 
-fn files(app: &AppHandle, dir: &Path) -> Vec<ExportFile> {
-    let ffprobe = find(app, ToolId::Ffprobe);
-    // Из журнала и из папки: файл, сделанный раньше, тоже виден.
-    let mut paths: Vec<PathBuf> = journal(dir).files.iter().map(PathBuf::from).collect();
+/// Ролики проекта, новые первыми: из журнала и из папки (файл, сделанный раньше, тоже виден). Журнал
+/// лежит в папке проекта, которую могли прислать: принимаются только существующие `.mp4`.
+fn candidates(dir: &Path) -> Vec<PathBuf> {
+    let is_video = |p: &Path| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("mp4"));
+    let mut paths: Vec<PathBuf> = journal(dir).files.iter().map(PathBuf::from).filter(|p| is_video(p)).collect();
     for folder in [dir.join("output"), out_dir(dir)] {
         for e in std::fs::read_dir(folder).into_iter().flatten().flatten() {
-            if e.path().extension().is_some_and(|x| x == "mp4") && !paths.contains(&e.path()) {
+            if is_video(&e.path()) && !paths.contains(&e.path()) {
                 paths.push(e.path());
             }
         }
     }
-    let mut list: Vec<(std::time::SystemTime, ExportFile)> = paths
+    let mut dated: Vec<(std::time::SystemTime, PathBuf)> = paths.into_iter().filter(|p| p.is_file()).filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p))).collect();
+    dated.sort_by_key(|x| std::cmp::Reverse(x.0));
+    dated.into_iter().take(50).map(|x| x.1).collect()
+}
+
+fn files(app: &AppHandle, dir: &Path) -> Vec<ExportFile> {
+    let ffprobe = find(app, ToolId::Ffprobe);
+    let mut list: Vec<(std::time::SystemTime, ExportFile)> = candidates(dir)
         .into_iter()
-        .filter(|p| p.is_file())
         .filter_map(|path| {
             let meta = std::fs::metadata(&path).ok()?;
             let _ = app.asset_protocol_scope().allow_file(&path);
@@ -446,7 +451,7 @@ pub fn export_set_dir(project: State<'_, ProjectState>, dir: Option<String>) -> 
 pub fn export_delete(app: AppHandle, path: String) -> AppResult<()> {
     let (root, _) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
     let file = PathBuf::from(&path);
-    if !files(&app, &root).iter().any(|f| f.path == path) {
+    if !candidates(&root).contains(&file) {
         return Err(AppError::new("notExport", path));
     }
     std::fs::remove_file(&file)?;

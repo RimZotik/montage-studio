@@ -42,7 +42,7 @@ function EffectCard({ clip, fx, view, apply, lang, onError }: { clip: Clip; fx: 
 
 /** Свойства выбранного клипа: время, громкость, прозрачность, масштаб, сдвиг, плавность; текст
  *  субтитра. Пусто — подсказки и «Субтитр в точке». */
-export function Inspector({ view, clip, frame, apply, onError }: { view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean>; onError: (e: AppError) => void }) {
+export function Inspector({ view, clip, frame, apply, onError, selectedCount }: { selectedCount: number; view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean>; onError: (e: AppError) => void }) {
   const { t, i18n } = useTranslation();
   const fps = view.project.sequence.fps;
   const [text, setText] = useState(clip?.text ?? "");
@@ -56,7 +56,7 @@ export function Inspector({ view, clip, frame, apply, onError }: { view: Project
     return (
       <aside className="inspector">
         <div className="colhead">{t("edit.inspector")}</div>
-        <p className="faint ihint">{t("edit.noSelection")}</p>
+        <p className="faint ihint">{selectedCount > 1 ? t("edit.manySelected", { count: selectedCount }) : t("edit.noSelection")}</p>
         {captionTrack && (
           <button className="btn" onClick={addCaption}>
             <Captions size={14} strokeWidth={1.75} />
@@ -64,7 +64,7 @@ export function Inspector({ view, clip, frame, apply, onError }: { view: Project
           </button>
         )}
         <div className="keys">
-          {(["space", "split", "delete", "ripple", "marker", "zoom"] as const).map((k) => (
+          {(["space", "tools", "split", "copy", "delete", "ripple", "marker", "zoom"] as const).map((k) => (
             <div key={k}>
               <span className="mono">{t(`edit.keys.${k}.k`)}</span>
               {t(`edit.keys.${k}.v`)}

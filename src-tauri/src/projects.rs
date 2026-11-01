@@ -130,8 +130,8 @@ pub fn canonical(path: &str) -> String {
 fn tidy(c: &rusqlite::Connection) -> rusqlite::Result<()> {
     let rows: Vec<(String, i64, i64)> = {
         let mut stmt = c.prepare("select path, created_at, opened_at from projects order by opened_at desc")?;
-        let list = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
-        list
+        
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?
     };
     // Сначала повторы, затем имена: иначе новое имя может совпасть с еще не удаленной записью.
     let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();

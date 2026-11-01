@@ -89,6 +89,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   // Удаленные клипы не остаются выделенными.
   useEffect(() => setSelected((s) => s.filter((id) => view.clips.some((c) => c.id === id))), [view.clips]);
 
+  const clipboard = useRef<string[]>([]);
   const unlocked = useCallback((id: string) => !view.tracks.find((t) => t.id === id)?.locked, [view.tracks]);
   const actions: TimelineActions = useMemo(
     () => ({
@@ -116,6 +117,13 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
         if (selected.length) void apply([{ op: "duplicateClips", ids: selected, at: null }], "duplicate");
       },
       selectAll: () => setSelected(view.clips.map((c) => c.id)),
+      copy: () => {
+        clipboard.current = selected;
+      },
+      paste: () => {
+        const ids = clipboard.current.filter((id) => view.clips.some((c) => c.id === id));
+        if (ids.length) void apply([{ op: "duplicateClips", ids, at: frame }], "paste");
+      },
     }),
     [apply, fps, frame, selected, t, unlocked, view.clips, view.tracks],
   );
@@ -133,6 +141,11 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
         } else if (e.code === "KeyD") {
           e.preventDefault();
           actions.duplicate();
+        } else if (e.code === "KeyC") {
+          actions.copy();
+        } else if (e.code === "KeyV") {
+          e.preventDefault();
+          actions.paste();
         } else if (e.code === "KeyK") {
           e.preventDefault();
           actions.split();
@@ -237,7 +250,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
         <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} />
         <Splitter width={w.inspector} min={240} max={480} side="right" onChange={(v) => setW("inspector", v)} onReset={() => setW("inspector", WIDTHS.inspector)} />
         <div style={{ width: w.inspector, display: "flex", minHeight: 0 }}>
-          <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} />
+          <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} selectedCount={selected.length} />
         </div>
       </div>
       <Splitter width={w.timeline} min={160} max={640} side="right" vertical onChange={(v) => setW("timeline", v)} onReset={() => setW("timeline", WIDTHS.timeline)} />
@@ -253,7 +266,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
             </button>
           </div>
         )}
-        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} tool={tool} onTool={setTool} snapOn={snapOn} onSnap={setSnapOn} actions={actions} onOpenEffects={openEffects} onNote={setNote} />
+        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} tool={tool} onTool={setTool} snapOn={snapOn} onSnap={setSnapOn} actions={actions} onOpenEffects={openEffects} onNote={setNote} onError={onError} />
         {note && <div className="tlnote">{note}</div>}
       </div>
       {drag && (

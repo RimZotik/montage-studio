@@ -59,7 +59,11 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
   const removeFile = async (path: string) => {
     if (sure !== path) return setSure(path);
     setSure(null);
-    if (playing === path) setPlaying(null);
+    if (playing === path) {
+      setPlaying(null);
+      // Проигрыватель отпускает файл только после снятия с экрана, иначе Windows не даст удалить.
+      await new Promise((ok) => setTimeout(ok, 150));
+    }
     const r = await ipc.exportDelete(path);
     if (r.status === "error") return onError(r.error);
     reload();
@@ -166,7 +170,7 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
             <video key={playing} className="explay" src={convertFileSrc(playing)} controls autoPlay />
           ) : frames > 0 ? (
             <div className="exframe" style={{ aspectRatio: `${seq.width} / ${seq.height}` }}>
-              <Player component={TimelineComposition} inputProps={preview} durationInFrames={Math.max(1, frames)} compositionWidth={seq.width} compositionHeight={seq.height} fps={seq.fps} controls style={{ width: "100%", height: "100%" }} acknowledgeRemotionLicense />
+              <Player component={TimelineComposition} inputProps={preview} durationInFrames={Math.max(1, frames)} compositionWidth={seq.width} compositionHeight={seq.height} fps={seq.fps} initialFrame={Math.min(...view.clips.map((c) => c.start))} controls style={{ width: "100%", height: "100%" }} acknowledgeRemotionLicense />
             </div>
           ) : (
             <p className="faint">{t("export.noFrames")}</p>

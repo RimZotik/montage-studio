@@ -1,10 +1,10 @@
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Archive, Check, Copy, FolderInput, FolderOpen, Lock, MinusCircle, Package, Play, Plus, Save, Search, Square, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type LibraryRow, type LibraryView, commands as ipc, events } from "@/shared/ipc/bindings";
-import { playSound } from "@/pages/Edit/EffectsColumn";
+import { playSound, useSoundPlaying } from "@/pages/Edit/EffectsColumn";
 import { PresetPreview, TargetIcons } from "@/shared/ui/PresetPreview";
 import { ControlPanel, defaultsOf, loc } from "@/shared/ui/ControlPanel";
 
@@ -23,11 +23,11 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
   // Удаление стирает и историю правок: второе нажатие подтверждает.
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => setConfirmDelete(false), [sel]);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const playing = useSoundPlaying();
+  const [confirmPack, setConfirmPack] = useState(false);
+  useEffect(() => setConfirmPack(false), [pack]);
   const [name, setName] = useState("");
   const [drag, setDrag] = useState<{ row: LibraryRow; x: number; y: number; pack: string | null; before: string | null; copy: boolean } | null>(null);
-  const dragRef = useRef(drag);
-  dragRef.current = drag;
 
   const load = useCallback(() => void ipc.libraryView().then((r) => (r.status === "ok" ? setLib(r.data) : onError(r.error))), [onError]);
   useEffect(() => {
@@ -71,6 +71,7 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
     if (e.button !== 0) return;
     const [x0, y0] = [e.clientX, e.clientY];
     let active = false;
+    let last: NonNullable<typeof drag> | null = null;
     const noNative = (ev: Event) => ev.preventDefault();
     const move = (ev: PointerEvent) => {
       if (!active && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
@@ -88,7 +89,8 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
       }
       document.body.classList.toggle("dragcopy", accepts);
       document.body.classList.toggle("dragno", !!target && !accepts);
-      setDrag({ row: r, x: ev.clientX, y: ev.clientY, pack: accepts ? target : null, before, copy: accepts });
+      last = { row: r, x: ev.clientX, y: ev.clientY, pack: accepts ? target : null, before, copy: accepts };
+      setDrag(last);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -99,7 +101,7 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
       setDrag(null);
     };
     const up = () => {
-      const d = dragRef.current;
+      const d = last;
       stop();
       if (!active || !d) return;
       if (d.pack) {
@@ -139,7 +141,11 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
     let id = `${row.item.id}-copy`;
     for (let n = 2; taken.has(id); n++) id = `${row.item.id}-copy-${n}`;
     const controls = (Array.isArray(row.item.controls) ? row.item.controls : []).map((c: any) => (c.id && c.id in values ? { ...c, default: values[c.id] } : c));
-    const r = await ipc.librarySave({ ...row.item, id, controls, author: "user", revision: 1 }, null);
+    // Имя копии отличается от оригинала: иначе в списке два одинаковых.
+    const suffix = (l: string) => ` (${t("library.copySuffix", { lng: l })})`;
+    const old = row.item.name;
+    const named = typeof old === "object" && old ? Object.fromEntries(Object.entries(old).map(([l, v]) => [l, `${String(v)}${suffix(l)}`])) : `${String(old)}${suffix(lang)}`;
+    const r = await ipc.librarySave({ ...row.item, id, name: named, controls, author: "user", revision: 1 }, null);
     if (r.status === "error") return onError(r.error);
     setSel(id);
     setPack("all");
@@ -222,9 +228,9 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
             </button>
           )}
           {current && !current.readonly && current.id !== "main" && (
-            <button className="btn" onClick={() => void ipc.packRemove(current.id).then((r) => { done(r); setPack("all"); })}>
+            <button className={`btn ${confirmPack ? "danger" : ""}`} onClick={() => (confirmPack ? void ipc.packRemove(current.id).then((r) => { done(r); setPack("all"); }) : setConfirmPack(true))}>
               <Trash2 size={14} strokeWidth={1.75} />
-              {t("library.deletePack")}
+              {confirmPack ? t("library.deletePackSure") : t("library.deletePack")}
             </button>
           )}
         </div>
@@ -255,7 +261,7 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    playSound(r.item.id, setPlaying, onError, playing);
+                    playSound(r.item.id, onError);
                   }}
                 >
                   {playing === r.item.id ? <Square size={13} strokeWidth={2} /> : <Play size={13} strokeWidth={2} />}
@@ -277,7 +283,7 @@ export function Library({ onError, onToast, onUse, canApply }: { onError: (e: Ap
             <p className="faint">{loc(row.item.description, lang)}</p>
             <PresetPreview item={row.item} values={values} live />
             {row.item.kind === "sound" && (
-              <button className="btn" onClick={() => playSound(row.item.id, setPlaying, onError, playing)}>
+              <button className="btn" onClick={() => playSound(row.item.id, onError)}>
                 {playing === row.item.id ? <Square size={14} strokeWidth={1.75} /> : <Play size={14} strokeWidth={1.75} />}
                 {t("library.listen")}
               </button>

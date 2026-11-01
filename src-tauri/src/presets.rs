@@ -650,12 +650,22 @@ pub fn sound_add(app: &AppHandle, id: &str, frames: &[u32], track: Option<&str>,
     let (dir, doc) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
     let (rel, seconds) = sound_file(app, &dir, &item)?;
     let fps = doc.project.sequence.fps;
-    let track = track.map_or_else(|| sfx_track(&doc), str::to_owned);
     let hit = secs_to_frames(item.hit_at.unwrap_or(0.0), fps);
+    let length = secs_to_frames(seconds, fps).max(1);
     let mut made = Vec::new();
     commit(app, label, |e| {
         for frame in frames {
-            let ids = e.apply(&Op::AddClip { track: track.clone(), kind: ClipKind::Media, src: Some(rel.clone()), text: None, start: frame.saturating_sub(hit), duration: secs_to_frames(seconds, fps).max(1), offset: None })?;
+            let start = frame.saturating_sub(hit);
+            // Верхний клип заменяет нижний, поэтому звук не ложится поверх музыки: своя свободная
+            // дорожка, при нужде новая.
+            let chosen = match track {
+                Some(t) => t.to_owned(),
+                None => match free_audio_track(e.tracks, e.clips, start, start + length) {
+                    Some(t) => t,
+                    None => e.apply(&Op::AddTrack { kind: TrackKind::Audio })?.pop().ok_or_else(|| bad("no track"))?,
+                },
+            };
+            let ids = e.apply(&Op::AddClip { track: chosen, kind: ClipKind::Media, src: Some(rel.clone()), text: None, start, duration: length, offset: None })?;
             for id in ids {
                 if let Some(v) = volume {
                     e.apply(&Op::SetProps { id: id.clone(), props: ClipPropsPatch { volume: Some(v), ..ClipPropsPatch::default() } })?;
@@ -667,6 +677,11 @@ pub fn sound_add(app: &AppHandle, id: &str, frames: &[u32], track: Option<&str>,
     })?;
     library::bump(&app.state::<Db>(), id);
     Ok(made)
+}
+
+/// Звуковая дорожка, свободная на этом участке, начиная с нижней.
+pub fn free_audio_track(tracks: &[crate::project::timeline::Track], clips: &[Clip], start: u32, end: u32) -> Option<String> {
+    tracks.iter().rev().filter(|t| t.kind == TrackKind::Audio && !t.locked).find(|t| !clips.iter().any(|c| c.track == t.id && c.start < end && c.end() > start)).map(|t| t.id.clone())
 }
 
 /// Дорожка для звуков: последняя звуковая.
@@ -1070,6 +1085,16 @@ mod tests {
         assert_eq!(keys[3], (820, 1.0));
         assert!(keys.windows(2).all(|w| w[0].0 < w[1].0), "по возрастанию");
         assert!(duck_keys(&[(0, 50)], &c, 0.25, 10, 20).is_empty(), "речь вне клипа");
+    }
+
+    #[test]
+    fn sounds_take_a_free_audio_track() {
+        let tracks = crate::project::timeline::default_tracks();
+        let music = clip("c1", "a3", 0, 300, 0);
+        assert_eq!(free_audio_track(&tracks, std::slice::from_ref(&music), 30, 70).as_deref(), Some("a2"));
+        assert_eq!(free_audio_track(&tracks, std::slice::from_ref(&music), 300, 340).as_deref(), Some("a3"), "после музыки место свободно");
+        let full = [music, clip("c2", "a2", 0, 300, 0), clip("c3", "a1", 0, 300, 0)];
+        assert_eq!(free_audio_track(&tracks, &full, 30, 70), None, "все заняты — новая дорожка");
     }
 
     #[test]

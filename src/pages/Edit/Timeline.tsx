@@ -1,5 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Eye, EyeOff, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
+import { Eye, EyeOff, Link2, Lock, LockOpen, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clip, MediaItem, Op, ProjectView, Track } from "@/shared/ipc/bindings";
@@ -75,16 +75,22 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
   useEffect(() => {
     setDropTarget((item, x, y) => {
       const at = dropAt(item, x, y);
-      if (at) void apply([{ op: "addClip", track: at.track, kind: "media", src: item.path, text: null, start: at.start, duration: at.duration, offset: null }], "add");
+      if (!at) return;
+      const onVideo = view.tracks.find((tr) => tr.id === at.track)?.kind === "video";
+      const audio = view.tracks.find((tr) => tr.kind === "audio" && !tr.locked);
+      if (onVideo && item.category === "footage" && item.probe?.audio !== false && audio)
+        void apply([{ op: "addLinked", videoTrack: at.track, audioTrack: audio.id, src: item.path, start: at.start, duration: at.duration, offset: null }], "add");
+      else void apply([{ op: "addClip", track: at.track, kind: "media", src: item.path, text: null, start: at.start, duration: at.duration, offset: null }], "add");
     });
     return () => setDropTarget(null);
-  }, [dropAt, apply]);
+  }, [dropAt, apply, view.tracks]);
   const ghost = mediaDrag ? dropAt(mediaDrag.item, mediaDrag.x, mediaDrag.y) : null;
 
   const onClipDown = (e: React.PointerEvent, clip: Clip, mode: Drag["mode"]) => {
     e.stopPropagation();
     if (e.button !== 0) return;
-    if (!selected.includes(clip.id)) onSelect(e.shiftKey ? [...selected, clip.id] : [clip.id]);
+    const group = clip.link ? [clip.id, ...view.clips.filter((c) => c.link === clip.link && c.id !== clip.id).map((c) => c.id)] : [clip.id];
+    if (!selected.includes(clip.id)) onSelect(e.shiftKey ? [...selected, ...group] : group);
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDrag({ mode, clip, x0: e.clientX, track: clip.track, start: clip.start, duration: clip.duration, offset: clip.offset ?? 0, moved: false });
   };
@@ -127,10 +133,12 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     if (!d.moved) return;
     const c = d.clip;
     setPending({ id: c.id, track: d.track, start: d.start, duration: d.duration });
+    const done = (ok: boolean) => !ok && setPending(null);
     if (d.mode === "move") {
-      if (d.start !== c.start || d.track !== c.track) void apply([{ op: "moveClip", id: c.id, track: d.track !== c.track ? d.track : null, start: d.start }], "move");
+      if (d.start !== c.start || d.track !== c.track) void apply([{ op: "moveClip", id: c.id, track: d.track !== c.track ? d.track : null, start: d.start }], "move").then(done);
+      else setPending(null);
     } else {
-      void apply([{ op: "trimClip", id: c.id, start: d.start, duration: d.duration, offset: c.kind === "media" ? d.offset : null }], "trim");
+      void apply([{ op: "trimClip", id: c.id, start: d.start, duration: d.duration, offset: c.kind === "media" ? d.offset : null }], "trim").then(done);
     }
   };
 
@@ -199,8 +207,11 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
               .filter((c) => (drag?.clip.id === c.id ? drag.track : pending?.id === c.id ? pending.track : c.track) === tr.id)
               .map((c) => {
                 const live = drag?.clip.id === c.id ? drag : pending?.id === c.id ? pending : null;
-                const start = live ? live.start : c.start;
-                const duration = live ? live.duration : c.duration;
+                // Связанный с перетаскиваемым: тот же сдвиг (перенос) или те же границы (обрезка).
+                const lead = !live && c.link ? (drag && drag.clip.link === c.link ? drag : pending ? view.clips.find((x) => x.id === pending.id && x.link === c.link) && pending : null) : null;
+                const leadClip = lead ? view.clips.find((x) => x.id === ("clip" in lead ? lead.clip.id : lead.id)) : null;
+                const start = live ? live.start : lead && leadClip ? ("mode" in lead && lead.mode !== "move" ? lead.start : c.start + (lead.start - leadClip.start)) : c.start;
+                const duration = live ? live.duration : lead ? lead.duration : c.duration;
                 const m = c.src ? byPath.get(c.src) : undefined;
                 const label = c.kind === "caption" ? c.text : c.kind === "solid" ? c.text : (m?.name ?? c.src?.split("/").pop());
                 const bg = m?.thumb ? `url("${convertFileSrc(m.thumb)}")` : undefined;
@@ -208,11 +219,12 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
                   <div
                     key={c.id}
                     className={`clip ${tr.kind} ${selected.includes(c.id) ? "sel" : ""}`}
-                    style={{ left: HEAD + start * zoom, width: Math.max(4, duration * zoom), backgroundImage: bg }}
+                    style={{ left: HEAD + start * zoom, width: Math.max(4, duration * zoom), backgroundImage: bg, zIndex: 1 + view.clips.indexOf(c) }}
                     onPointerDown={(e) => onClipDown(e, c, "move")}
                     title={`${label ?? ""} · ${timecode(start, fps)} – ${timecode(start + duration, fps)}`}
                   >
                     <span className="h l" onPointerDown={(e) => onClipDown(e, c, "trimL")} />
+                    {c.link && <Link2 className="lnk" size={11} strokeWidth={2} />}
                     <span className="cl">{label}</span>
                     <span className="h r" onPointerDown={(e) => onClipDown(e, c, "trimR")} />
                   </div>

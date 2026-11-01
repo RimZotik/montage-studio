@@ -20,11 +20,18 @@ pub struct Settings {
     pub language: String,
     /// Папка новых проектов по умолчанию.
     pub projects_dir: Option<String>,
+    /// Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`.
+    #[serde(default = "sonnet")]
+    pub claude_model: String,
+}
+
+fn sonnet() -> String {
+    "sonnet".into()
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { version: VERSION, language: String::new(), projects_dir: None }
+        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet() }
     }
 }
 

@@ -104,7 +104,9 @@ fn spawn(app: &AppHandle, dir: &Path, system: &Path, prompt_hash: u64, busy: Arc
     );
     std::fs::write(&mcp, serde_json::json!({ "mcpServers": servers }).to_string())?;
     let mut command = build_command(&claude, dir, system, &mcp, saved_session(dir));
+    let model = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).filter(|m| ["sonnet", "opus", "haiku"].contains(&m.as_str())).unwrap_or_else(|| "sonnet".into());
     command
+        .args(["--model", &model])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -219,6 +221,14 @@ pub fn chat_send(app: AppHandle, chat: State<'_, ChatState>, project: State<'_, 
     let cdir = claude_dir(&dir);
     std::fs::create_dir_all(&cdir)?;
     let (system, hash) = prompt::system_prompt(&dir, &doc, env!("CARGO_PKG_VERSION"));
+    // Сменилась модель в настройках — тоже перезапуск (с той же сессией).
+    let model = app.try_state::<crate::settings::SettingsState>().map(|s| s.get().claude_model).unwrap_or_default();
+    let hash = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (hash, &model).hash(&mut h);
+        h.finish()
+    };
     let system_path = cdir.join("system.md");
     std::fs::write(&system_path, &system)?;
 

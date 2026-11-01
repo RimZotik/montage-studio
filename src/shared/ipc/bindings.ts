@@ -61,6 +61,10 @@ export const commands = {
 	/**  Интерфейс сообщает головку, выделение и вкладку (для сводки Claude). */
 	uiStateReport: (ui: UiState) => __TAURI_INVOKE<void>("ui_state_report", { ui }),
 	errorsCount: () => __TAURI_INVOKE<number>("errors_count"),
+	/**  Последние ошибки, новые первыми. */
+	errorsRecent: () => __TAURI_INVOKE<ErrorEntry[]>("errors_recent"),
+	/**  «Пропустить»: очистить окошко ошибок (журнал не трогается). */
+	errorsClear: () => __TAURI_INVOKE<void>("errors_clear"),
 	/**
 	 *  Отправить сообщение. `kind` — `user` или `decision` (ответ на карточку: в чате показывается
 	 *  отметкой на карточке, а не сообщением).
@@ -135,6 +139,11 @@ export type Clip = {
 	duration: number,
 	/**  С какого кадра файла начинается клип (обрезка начала). */
 	offset?: number,
+	/**
+	 *  Группа связанных клипов (видео и звук одного файла): перенос, обрезка, разрез и удаление —
+	 *  вместе.
+	 */
+	link?: string | null,
 	props?: ClipProps,
 };
 
@@ -169,6 +178,12 @@ export type ComponentProgress = {
 	received: number,
 	total: number,
 	error: string | null,
+};
+
+export type ErrorEntry = {
+	at: number,
+	code: string,
+	message: string,
 };
 
 export type Hardware = {
@@ -235,7 +250,9 @@ export type NewProject = {
 };
 
 /**  Операции правки таймлайна (пакет — один шаг истории). */
-export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | null; text: string | null; start: number; duration: number; offset: number | null } | { op: "moveClip"; id: string; track: string | null; start: number } | 
+export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | null; text: string | null; start: number; duration: number; offset: number | null } | 
+/**  Видео со звуком: клип картинки и связанный клип звука того же файла. */
+{ op: "addLinked"; videoTrack: string; audioTrack: string; src: string; start: number; duration: number; offset: number | null } | { op: "moveClip"; id: string; track: string | null; start: number } | 
 /**  Новые границы: `start`/`duration` на таймлайне и `offset` в файле (что не задано — как было). */
 { op: "trimClip"; id: string; start: number | null; duration: number | null; offset: number | null } | 
 /**  Разрезать клип в кадре таймлайна. */
@@ -313,6 +330,8 @@ export type Settings = {
 	language?: string,
 	/**  Папка новых проектов по умолчанию. */
 	projectsDir?: string | null,
+	/**  Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`. */
+	claudeModel?: string,
 };
 
 export type Skipped = {

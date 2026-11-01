@@ -142,7 +142,9 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
     return () => clearTimeout(t);
   }, [frame, selected]);
 
-  const clip = selected.length === 1 ? (view.clips.find((c) => c.id === selected[0]) ?? null) : null;
+  // Свойства — у клипа, по которому щелкнули (у связки выделены оба, первым — он).
+  const first = view.clips.find((c) => c.id === selected[0]) ?? null;
+  const clip = first && selected.every((id) => id === first.id || (!!first.link && view.clips.find((c) => c.id === id)?.link === first.link)) ? first : null;
 
   return (
     <div className="editpage">

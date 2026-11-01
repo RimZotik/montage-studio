@@ -79,6 +79,13 @@ pub fn run() {
             updates::start(app.handle());
             // MCP-сервер студии для Claude (адрес и ключ — в mcp.json чата проекта).
             let info = mcp::start(app.handle());
+            // Сборка разработки (или MONTAGE_MCP_EXPOSE=1): адрес и ключ — в mcp-dev.json, чтобы
+            // внешний Claude мог проверять студию теми же инструментами.
+            if let Some(i) = &info
+                && (cfg!(debug_assertions) || std::env::var("MONTAGE_MCP_EXPOSE").is_ok_and(|v| v == "1"))
+            {
+                let _ = std::fs::write(config.join("mcp-dev.json"), serde_json::json!({ "url": i.url, "token": i.token }).to_string());
+            }
             *app.state::<mcp::McpState>().info.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = info;
             Ok(())
         })

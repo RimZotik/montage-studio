@@ -91,6 +91,10 @@ pub struct Clip {
     /// С какого кадра файла начинается клип (обрезка начала).
     #[serde(default)]
     pub offset: u32,
+    /// Группа связанных клипов (видео и звук одного файла): перенос, обрезка, разрез и удаление —
+    /// вместе.
+    #[serde(default)]
+    pub link: Option<String>,
     #[serde(default)]
     pub props: ClipProps,
 }
@@ -114,6 +118,8 @@ pub struct Marker {
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "op")]
 pub enum Op {
     AddClip { track: String, kind: ClipKind, src: Option<String>, text: Option<String>, start: u32, duration: u32, offset: Option<u32> },
+    /// Видео со звуком: клип картинки и связанный клип звука того же файла.
+    AddLinked { video_track: String, audio_track: String, src: String, start: u32, duration: u32, offset: Option<u32> },
     MoveClip { id: String, track: Option<String>, start: u32 },
     /// Новые границы: `start`/`duration` на таймлайне и `offset` в файле (что не задано — как было).
     TrimClip { id: String, start: Option<u32>, duration: Option<u32>, offset: Option<u32> },
@@ -167,72 +173,129 @@ impl Edit<'_> {
         Ok(())
     }
 
-    /// Применить операцию. Возвращает ID нового клипа (у `AddClip`, `SplitClip`).
-    pub fn apply(&mut self, op: &Op) -> AppResult<Option<String>> {
+    /// ID клипов группы (связанные видео и звук одного файла), включая сам клип.
+    fn group(&self, id: &str) -> AppResult<Vec<String>> {
+        let c = self.clips.iter().find(|c| c.id == id).ok_or_else(|| bad(format!("clip {id} not found")))?;
+        Ok(match &c.link {
+            Some(l) => self.clips.iter().filter(|x| x.link.as_ref() == Some(l)).map(|x| x.id.clone()).collect(),
+            None => vec![c.id.clone()],
+        })
+    }
+
+    /// Поднять клипы наверх своих дорожек (позже поставленный — выше: перекрывает нижний, не
+    /// обрезая его).
+    fn raise(&mut self, ids: &[String]) {
+        let (top, rest): (Vec<Clip>, Vec<Clip>) = self.clips.drain(..).partition(|c| ids.contains(&c.id));
+        self.clips.extend(rest);
+        self.clips.extend(top);
+    }
+
+    /// Применить операцию. Возвращает ID новых клипов (у `AddClip`, `AddLinked`, `SplitClip`).
+    pub fn apply(&mut self, op: &Op) -> AppResult<Vec<String>> {
         match op {
             Op::AddClip { track, kind, src, text, start, duration, offset } => {
                 self.unlocked(track)?;
                 let id = next_id(self.clips);
-                self.clips.push(Clip { id: id.clone(), track: track.clone(), kind: *kind, src: src.clone(), text: text.clone(), start: *start, duration: *duration, offset: offset.unwrap_or(0), props: ClipProps::default() });
-                Ok(Some(id))
+                self.clips.push(Clip { id: id.clone(), track: track.clone(), kind: *kind, src: src.clone(), text: text.clone(), start: *start, duration: *duration, offset: offset.unwrap_or(0), link: None, props: ClipProps::default() });
+                Ok(vec![id])
+            }
+            Op::AddLinked { video_track, audio_track, src, start, duration, offset } => {
+                self.unlocked(video_track)?;
+                self.unlocked(audio_track)?;
+                let v = next_id(self.clips);
+                let link = format!("l{}", v.trim_start_matches('c'));
+                let base = Clip { id: v.clone(), track: video_track.clone(), kind: ClipKind::Media, src: Some(src.clone()), text: None, start: *start, duration: *duration, offset: offset.unwrap_or(0), link: Some(link), props: ClipProps::default() };
+                self.clips.push(base.clone());
+                let a = next_id(self.clips);
+                self.clips.push(Clip { id: a.clone(), track: audio_track.clone(), ..base });
+                Ok(vec![v, a])
             }
             Op::MoveClip { id, track, start } => {
-                let from = self.clip_mut(id)?.track.clone();
-                self.unlocked(&from)?;
+                let group = self.group(id)?;
+                let delta = i64::from(*start) - i64::from(self.clip_mut(id)?.start);
+                for g in &group {
+                    let t = self.clip_mut(g)?.track.clone();
+                    self.unlocked(&t)?;
+                }
                 if let Some(t) = track {
                     self.unlocked(t)?;
                 }
-                let c = self.clip_mut(id)?;
-                c.start = *start;
-                if let Some(t) = track {
-                    c.track = t.clone();
+                for g in &group {
+                    let c = self.clip_mut(g)?;
+                    c.start = u32::try_from(i64::from(c.start) + delta).map_err(|_| bad("clip would start before 0"))?;
                 }
-                Ok(None)
+                if let Some(t) = track {
+                    self.clip_mut(id)?.track = t.clone();
+                }
+                self.raise(&group);
+                Ok(vec![])
             }
             Op::TrimClip { id, start, duration, offset } => {
-                let track = self.clip_mut(id)?.track.clone();
-                self.unlocked(&track)?;
-                let c = self.clip_mut(id)?;
-                if let Some(s) = start {
-                    c.start = *s;
+                let group = self.group(id)?;
+                for g in &group {
+                    let t = self.clip_mut(g)?.track.clone();
+                    self.unlocked(&t)?;
                 }
-                if let Some(d) = duration {
-                    c.duration = *d;
+                for g in &group {
+                    let c = self.clip_mut(g)?;
+                    if let Some(s) = start {
+                        c.start = *s;
+                    }
+                    if let Some(d) = duration {
+                        c.duration = *d;
+                    }
+                    if let (Some(o), ClipKind::Media) = (offset, c.kind) {
+                        c.offset = *o;
+                    }
                 }
-                if let Some(o) = offset {
-                    c.offset = *o;
-                }
-                Ok(None)
+                self.raise(&group);
+                Ok(vec![])
             }
             Op::SplitClip { id, at } => {
-                let c = self.clip_mut(id)?.clone();
-                self.unlocked(&c.track)?;
-                if *at <= c.start || *at >= c.end() {
-                    return Err(bad(format!("split {at} outside clip {id}")));
+                let group = self.group(id)?;
+                let right_link = format!("l{}", next_id(self.clips).trim_start_matches('c'));
+                let mut created = Vec::new();
+                for g in &group {
+                    let c = self.clip_mut(g)?.clone();
+                    self.unlocked(&c.track)?;
+                    if *at <= c.start || *at >= c.end() {
+                        return Err(bad(format!("split {at} outside clip {g}")));
+                    }
+                    let left = at - c.start;
+                    let mut right = c.clone();
+                    right.id = next_id(self.clips);
+                    right.start = *at;
+                    right.duration = c.duration - left;
+                    if c.kind == ClipKind::Media {
+                        right.offset = c.offset + left;
+                    }
+                    right.props.fade_in = 0;
+                    if c.link.is_some() {
+                        right.link = Some(right_link.clone());
+                    }
+                    let first = self.clip_mut(g)?;
+                    first.duration = left;
+                    first.props.fade_out = 0;
+                    created.push(right.id.clone());
+                    self.clips.push(right);
                 }
-                let left = at - c.start;
-                let new_id = next_id(self.clips);
-                let mut right = c.clone();
-                right.id = new_id.clone();
-                right.start = *at;
-                right.duration = c.duration - left;
-                if c.kind == ClipKind::Media {
-                    right.offset = c.offset + left;
-                }
-                right.props.fade_in = 0;
-                let first = self.clip_mut(id)?;
-                first.duration = left;
-                first.props.fade_out = 0;
-                self.clips.push(right);
-                Ok(Some(new_id))
+                Ok(created)
             }
             Op::DeleteClips { ids, ripple } => {
+                let mut all: Vec<String> = Vec::new();
                 for id in ids {
+                    for g in self.group(id)? {
+                        if !all.contains(&g) {
+                            all.push(g);
+                        }
+                    }
+                }
+                for id in &all {
                     let track = self.clip_mut(id)?.track.clone();
                     self.unlocked(&track)?;
                 }
-                let removed: Vec<Clip> = self.clips.iter().filter(|c| ids.contains(&c.id)).cloned().collect();
-                self.clips.retain(|c| !ids.contains(&c.id));
+                let removed: Vec<Clip> = self.clips.iter().filter(|c| all.contains(&c.id)).cloned().collect();
+                self.clips.retain(|c| !all.contains(&c.id));
                 if *ripple {
                     // По дорожкам, с конца: каждый удаленный сдвигает то, что правее него.
                     let mut gone = removed;
@@ -243,15 +306,15 @@ impl Edit<'_> {
                         }
                     }
                 }
-                Ok(None)
+                Ok(vec![])
             }
             Op::SetProps { id, props } => {
                 self.clip_mut(id)?.props = props.clone();
-                Ok(None)
+                Ok(vec![])
             }
             Op::SetText { id, text } => {
                 self.clip_mut(id)?.text = Some(text.clone());
-                Ok(None)
+                Ok(vec![])
             }
             Op::SetTrack { id, muted, locked } => {
                 let t = self.tracks.iter_mut().find(|t| &t.id == id).ok_or_else(|| bad(format!("track {id} not found")))?;
@@ -261,24 +324,25 @@ impl Edit<'_> {
                 if let Some(l) = locked {
                     t.locked = *l;
                 }
-                Ok(None)
+                Ok(vec![])
             }
             Op::AddMarker { frame, label } => {
                 self.markers.retain(|m| m.frame != *frame);
                 self.markers.push(Marker { frame: *frame, label: label.clone() });
                 self.markers.sort_by_key(|m| m.frame);
-                Ok(None)
+                Ok(vec![])
             }
             Op::RemoveMarker { frame } => {
                 self.markers.retain(|m| m.frame != *frame);
-                Ok(None)
+                Ok(vec![])
             }
         }
     }
 }
 
-/// Проверка таймлайна: клипы на существующих дорожках подходящего вида, без наложений на одной
-/// дорожке, длительность больше нуля, у медиа есть путь, у текста — текст.
+/// Проверка таймлайна: клипы на существующих дорожках подходящего вида, длительность больше
+/// нуля, у медиа есть путь. Наложение на одной дорожке разрешено: верхний (позже в списке)
+/// перекрывает нижний, не обрезая его.
 pub fn validate(tracks: &[Track], clips: &[Clip]) -> AppResult<()> {
     for c in clips {
         let t = tracks.iter().find(|t| t.id == c.track).ok_or_else(|| bad(format!("clip {} on missing track {}", c.id, c.track)))?;
@@ -295,13 +359,6 @@ pub fn validate(tracks: &[Track], clips: &[Clip]) -> AppResult<()> {
         let p = &c.props;
         if !(0.0..=2.0).contains(&p.volume) || !(0.0..=1.0).contains(&p.opacity) || !(0.01..=20.0).contains(&p.scale) {
             return Err(bad(format!("clip {} props out of range", c.id)));
-        }
-    }
-    let mut by_track: Vec<&Clip> = clips.iter().collect();
-    by_track.sort_by(|a, b| a.track.cmp(&b.track).then(a.start.cmp(&b.start)));
-    for pair in by_track.windows(2) {
-        if pair[0].track == pair[1].track && pair[1].start < pair[0].end() {
-            return Err(AppError::new("overlap", format!("{} and {} overlap on {}", pair[0].id, pair[1].id, pair[0].track)));
         }
     }
     Ok(())
@@ -341,7 +398,7 @@ mod tests {
 
     #[test]
     fn overlap_and_kinds_are_refused() {
-        assert_eq!(run(&[media("v1", 0, 60), media("v1", 30, 60)]).2.unwrap_err().code, "overlap");
+        assert!(run(&[media("v1", 0, 60), media("v1", 30, 60)]).2.is_ok(), "наложение не обрезает нижний");
         let cap = Op::AddClip { track: "v1".into(), kind: ClipKind::Caption, src: None, text: Some("Hi".into()), start: 0, duration: 30, offset: None };
         assert_eq!(run(&[cap]).2.unwrap_err().code, "invalidEdit");
         assert!(run(&[media("v1", 0, 60), media("v2", 30, 60)]).2.is_ok(), "разные дорожки — можно");
@@ -351,6 +408,29 @@ mod tests {
     fn locked_track_and_bad_split() {
         assert_eq!(run(&[Op::SetTrack { id: "v1".into(), muted: None, locked: Some(true) }, media("v1", 0, 10)]).2.unwrap_err().code, "trackLocked");
         assert_eq!(run(&[media("v1", 0, 10), Op::SplitClip { id: "c1".into(), at: 10 }]).2.unwrap_err().code, "invalidEdit");
+    }
+
+    #[test]
+    fn linked_move_split_delete() {
+        let add = Op::AddLinked { video_track: "v1".into(), audio_track: "a1".into(), src: "media/footage/a.mp4".into(), start: 0, duration: 100, offset: None };
+        let (_, clips, r) = run(&[add.clone(), Op::MoveClip { id: "c1".into(), track: None, start: 30 }]);
+        r.unwrap();
+        assert!(clips.iter().all(|c| c.start == 30), "звук едет вместе с видео");
+        let (_, clips, r) = run(&[add.clone(), Op::SplitClip { id: "c2".into(), at: 40 }]);
+        r.unwrap();
+        assert_eq!(clips.len(), 4, "разрез — у обоих");
+        let right: Vec<_> = clips.iter().filter(|c| c.start == 40).collect();
+        assert!(right.iter().all(|c| c.link == right[0].link && c.offset == 40), "правые части связаны между собой");
+        let (_, clips, r) = run(&[add, Op::DeleteClips { ids: vec!["c1".into()], ripple: false }]);
+        r.unwrap();
+        assert!(clips.is_empty(), "удаление — вместе");
+    }
+
+    #[test]
+    fn moved_clip_goes_on_top() {
+        let (_, clips, r) = run(&[media("v1", 0, 60), media("v1", 100, 60), Op::MoveClip { id: "c1".into(), track: None, start: 120 }]);
+        r.unwrap();
+        assert_eq!(clips.last().unwrap().id, "c1", "перенесенный — сверху");
     }
 
     #[test]

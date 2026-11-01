@@ -1,5 +1,5 @@
 import { Player, type PlayerRef } from "@remotion/player";
-import { Pause, Play, Scan, SkipBack } from "lucide-react";
+import { Pause, Play, Scan, SkipBack, Volume2, VolumeX } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProjectView } from "@/shared/ipc/bindings";
@@ -11,6 +11,15 @@ export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { vie
   const { t } = useTranslation();
   const seq = view.project.sequence;
   const [safe, setSafe] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  useEffect(() => {
+    const p = playerRef.current;
+    if (!p) return;
+    p.setVolume(volume);
+    if (muted) p.mute();
+    else p.unmute();
+  }, [volume, muted, playerRef]);
   const inputProps = useMemo(() => ({ sequence: seq, tracks: view.tracks, clips: view.clips, srcOf }), [seq, view.tracks, view.clips, srcOf]);
   const vertical = seq.height > seq.width;
 
@@ -50,9 +59,29 @@ export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { vie
         <span className="tc mono">{timecode(frame, seq.fps)}</span>
         <span className="tc mono faint">/ {timecode(total, seq.fps)}</span>
         <span style={{ flex: 1 }} />
-        <button className={`iconbtn ${safe ? "on" : ""}`} title={t("edit.safe")} onClick={() => setSafe((s) => !s)}>
-          <Scan size={14} strokeWidth={1.75} />
+        <button className="iconbtn" title={t("preview.mute")} onClick={() => setMuted((m) => !m)}>
+          {muted || volume === 0 ? <VolumeX size={14} strokeWidth={1.75} /> : <Volume2 size={14} strokeWidth={1.75} />}
         </button>
+        <input
+          className="scrub vol"
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={muted ? 0 : volume}
+          title={`${Math.round(volume * 100)}%`}
+          onChange={(e) => {
+            setMuted(false);
+            setVolume(Number(e.target.value));
+          }}
+          style={{ ["--p" as string]: `${(muted ? 0 : volume) * 100}%` }}
+        />
+        {vertical && (
+          <button className={`btn quiet safebtn ${safe ? "on" : ""}`} title={t("edit.safeHint")} onClick={() => setSafe((s) => !s)}>
+            <Scan size={14} strokeWidth={1.75} />
+            {t("edit.safe")}
+          </button>
+        )}
       </div>
     </div>
   );

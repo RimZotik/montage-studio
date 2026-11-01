@@ -138,6 +138,10 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const [pick, setPick] = useState("sonnet");
+  useEffect(() => {
+    void ipc.settingsGet().then((s) => setPick(s.claudeModel ?? "sonnet"));
+  }, []);
   const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -217,6 +221,22 @@ export function ChatPanel({ projectPath, onError, width }: { projectPath: string
     <aside className="chat" style={{ width }}>
       <div className="chathead">
         <b>Claude</b>
+        <select
+          className="modelsel"
+          title={t("chat.modelHint")}
+          value={pick}
+          onChange={(e) => {
+            const claudeModel = e.target.value;
+            setPick(claudeModel);
+            void ipc.settingsGet().then((s) => ipc.settingsUpdate({ ...s, claudeModel }));
+          }}
+        >
+          {["sonnet", "opus", "haiku"].map((m) => (
+            <option key={m} value={m}>
+              {t(`chat.models.${m}`)}
+            </option>
+          ))}
+        </select>
         {model && <span className="model">{model.replace(/^claude-/, "")}</span>}
         <button className="iconbtn" title={t("chat.newSession")} onClick={() => void newSession()}>
           <Plus size={15} strokeWidth={1.75} />

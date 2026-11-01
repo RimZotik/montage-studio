@@ -13,6 +13,7 @@ export type CompositionProps = {
 };
 
 const IMAGE = /\.(png|jpe?g|webp|gif|svg|bmp)$/i;
+
 /** Свойства клипа со значениями по умолчанию (в файле поля могут отсутствовать). */
 export function propsOf(clip: Clip) {
   const p = clip.props;
@@ -28,27 +29,75 @@ function fade(frame: number, clip: Clip): number {
   return k;
 }
 
-function VisualClip({ clip, srcOf }: { clip: Clip; srcOf: (p: string) => string }) {
+/** Непрерывный кусок одного файла: части встык, продолжающие друг друга в файле (после
+ *  разреза). Играется одним проигрывателем — без пауз и потерянных кадров на стыках; свойства
+ *  каждой части применяются по кадрам. `z` — выше рисуется позже. */
+export type Run = { id: string; track: string; src: string; start: number; duration: number; offset: number; parts: Clip[]; z: number };
+
+export function runsOf(clips: Clip[]): Run[] {
+  const z = new Map(clips.map((c, i) => [c.id, i]));
+  const out: Run[] = [];
+  const media = clips.filter((c) => c.kind === "media" && c.src).sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start);
+  for (const c of media) {
+    const prev = out[out.length - 1];
+    const last = prev?.parts[prev.parts.length - 1];
+    if (prev && last && prev.track === c.track && prev.src === c.src && prev.start + prev.duration === c.start && (last.offset ?? 0) + last.duration === (c.offset ?? 0)) {
+      prev.duration += c.duration;
+      prev.parts.push(c);
+      prev.z = Math.max(prev.z, z.get(c.id) ?? 0);
+    } else out.push({ id: c.id, track: c.track, src: c.src ?? "", start: c.start, duration: c.duration, offset: c.offset ?? 0, parts: [c], z: z.get(c.id) ?? 0 });
+  }
+  return out;
+}
+
+/** Часть куска под кадром `f` (от начала куска). */
+function partAt(run: Run, f: number): Clip {
+  const abs = run.start + f;
+  return run.parts.find((p) => abs >= p.start && abs < p.start + p.duration) ?? (run.parts[run.parts.length - 1] as Clip);
+}
+
+/** Закрыт ли кадр (абсолютный) куском выше на той же дорожке. */
+function covered(abs: number, run: Run, same: Run[]): boolean {
+  return same.some((h) => h.z > run.z && abs >= h.start && abs < h.start + h.duration);
+}
+
+function VisualRun({ run, srcOf, muted }: { run: Run; srcOf: (p: string) => string; muted: boolean }) {
   const frame = useCurrentFrame();
-  const p = propsOf(clip);
-  const style = { opacity: p.opacity * fade(frame, clip), transform: `translate(${p.x}px, ${p.y}px) scale(${p.scale})` };
-  if (clip.kind === "solid") return <AbsoluteFill style={{ ...style, background: clip.text ?? "#000000" }} />;
-  const src = srcOf(clip.src ?? "");
+  const part = partAt(run, frame);
+  const p = propsOf(part);
+  const style = { opacity: p.opacity * fade(run.start + frame - part.start, part), transform: `translate(${p.x}px, ${p.y}px) scale(${p.scale})` };
+  const src = srcOf(run.src);
   return (
     <AbsoluteFill style={style}>
-      {IMAGE.test(clip.src ?? "") ? (
+      {IMAGE.test(run.src) ? (
         <Img src={src} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       ) : (
-        <Html5Video src={src} trimBefore={clip.offset} volume={(f: number) => p.volume * fade(f, clip)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <Html5Video
+          src={src}
+          trimBefore={run.offset}
+          volume={(f: number) => {
+            if (muted) return 0;
+            const q = partAt(run, f);
+            return propsOf(q).volume * fade(run.start + f - q.start, q);
+          }}
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
       )}
     </AbsoluteFill>
   );
 }
 
+function SolidClip({ clip }: { clip: Clip }) {
+  const frame = useCurrentFrame();
+  return <AbsoluteFill style={{ background: clip.text ?? "#000000", opacity: propsOf(clip).opacity * fade(frame, clip) }} />;
+}
+
+/** Субтитр: нижняя треть по умолчанию; `props.y` сдвигает (минус — вверх), `scale` — размер. */
 function CaptionClip({ clip }: { clip: Clip }) {
   const frame = useCurrentFrame();
+  const p = propsOf(clip);
   return (
-    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: fade(frame, clip) }}>
+    <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fade(frame, clip), transform: `translate(${p.x}px, ${p.y}px) scale(${p.scale})` }}>
       <div style={{ fontFamily: "Geist Sans, system-ui, sans-serif", fontWeight: 700, fontSize: 64, color: "#fff", textAlign: "center", lineHeight: 1.1, padding: "0 8%", textShadow: "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: "2px #000" }}>
         {clip.text}
       </div>
@@ -56,63 +105,62 @@ function CaptionClip({ clip }: { clip: Clip }) {
   );
 }
 
-/** Части одного файла встык (после разреза), продолжающие друг друга в файле и с одинаковыми
- *  свойствами, играются одним клипом — иначе на стыке новый проигрыватель дает разрыв звука и
- *  картинки. */
-export function joinRuns(clips: Clip[]): Clip[] {
-  const out: Clip[] = [];
-  for (const c of [...clips].sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start)) {
-    const prev = out[out.length - 1];
-    const same = (a: Clip, b: Clip) => {
-      const pa = propsOf(a);
-      const pb = propsOf(b);
-      return pa.volume === pb.volume && pa.opacity === pb.opacity && pa.scale === pb.scale && pa.x === pb.x && pa.y === pb.y;
-    };
-    if (
-      prev &&
-      prev.kind === "media" &&
-      c.kind === "media" &&
-      prev.track === c.track &&
-      prev.src === c.src &&
-      prev.start + prev.duration === c.start &&
-      (prev.offset ?? 0) + prev.duration === (c.offset ?? 0) &&
-      propsOf(prev).fadeOut === 0 &&
-      propsOf(c).fadeIn === 0 &&
-      same(prev, c)
-    ) {
-      out[out.length - 1] = { ...prev, duration: prev.duration + c.duration, props: { ...propsOf(prev), fadeOut: propsOf(c).fadeOut } };
-    } else out.push(c);
-  }
-  return out;
-}
-
-export function TimelineComposition({ sequence, tracks, clips: raw, srcOf }: CompositionProps) {
-  const clips = joinRuns(raw);
-  // Следующий клип подгружается заранее, чтобы на стыке не было паузы.
+export function TimelineComposition({ sequence, tracks, clips, srcOf }: CompositionProps) {
+  const runs = runsOf(clips);
+  const z = new Map(clips.map((c, i) => [c.id, i]));
+  // Следующий кусок подгружается заранее, чтобы на стыке не было паузы.
   const premount = sequence.fps;
-  // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх.
+  const audioOn = new Set(tracks.filter((t) => t.kind === "audio" && !t.muted).map((t) => t.id));
+  // Связки, у которых есть звук на включенной звуковой дорожке: картинка играет без звука.
+  const soundLinks = new Set(clips.filter((c) => c.link && audioOn.has(c.track)).map((c) => c.link));
+  // Дорожки идут сверху вниз (V2 выше V1) — рисовать снизу вверх; внутри дорожки — по z.
   const visual = [...tracks].reverse().filter((t) => t.kind !== "audio" && !t.muted);
-  const audio = tracks.filter((t) => t.kind === "audio" && !t.muted);
   return (
     <AbsoluteFill style={{ background: sequence.background ?? "#000000" }}>
-      {visual.map((t) =>
-        clips
-          .filter((c) => c.track === t.id)
-          .map((c) => (
-            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} premountFor={premount}>
-              <AbsoluteFill>{c.kind === "caption" ? <CaptionClip clip={c} /> : <VisualClip clip={c} srcOf={srcOf} />}</AbsoluteFill>
+      {visual.map((t) => {
+        const items = [
+          ...runs
+            .filter((r) => r.track === t.id)
+            .map((r) => ({
+              z: r.z,
+              el: (
+                <Sequence key={r.id} from={r.start} durationInFrames={r.duration} premountFor={premount}>
+                  <VisualRun run={r} srcOf={srcOf} muted={r.parts.some((p) => !!p.link && soundLinks.has(p.link))} />
+                </Sequence>
+              ),
+            })),
+          ...clips
+            .filter((c) => c.track === t.id && c.kind !== "media")
+            .map((c) => ({
+              z: z.get(c.id) ?? 0,
+              el: (
+                <Sequence key={c.id} from={c.start} durationInFrames={c.duration}>
+                  {c.kind === "caption" ? <CaptionClip clip={c} /> : <SolidClip clip={c} />}
+                </Sequence>
+              ),
+            })),
+        ];
+        return items.sort((a, b) => a.z - b.z).map((i) => i.el);
+      })}
+      {tracks
+        .filter((t) => audioOn.has(t.id))
+        .map((t) => {
+          const own = runs.filter((r) => r.track === t.id);
+          return own.map((r) => (
+            <Sequence key={r.id} from={r.start} durationInFrames={r.duration} premountFor={premount}>
+              <Html5Audio
+                src={srcOf(r.src)}
+                trimBefore={r.offset}
+                volume={(f: number) => {
+                  // Звук нижнего клипа под верхним на той же дорожке не слышен.
+                  if (covered(r.start + f, r, own)) return 0;
+                  const q = partAt(r, f);
+                  return propsOf(q).volume * fade(r.start + f - q.start, q);
+                }}
+              />
             </Sequence>
-          )),
-      )}
-      {audio.map((t) =>
-        clips
-          .filter((c) => c.track === t.id && c.src)
-          .map((c) => (
-            <Sequence key={c.id} from={c.start} durationInFrames={c.duration} premountFor={premount}>
-              <Html5Audio src={srcOf(c.src ?? "")} trimBefore={c.offset} volume={(f: number) => propsOf(c).volume * fade(f, c)} />
-            </Sequence>
-          )),
-      )}
+          ));
+        })}
     </AbsoluteFill>
   );
 }

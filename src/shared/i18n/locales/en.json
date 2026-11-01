@@ -99,8 +99,10 @@
     "claude": "Claude Code {{version}}",
     "noClaude": "Claude Code not found",
     "errors": "Errors: {{count}}",
-    "errorsHint": "Ask Claude to look into the log",
-    "errorsAsk": "The studio log has errors. Look at them (log_errors) and briefly say what may cause them and what to do."
+    "errorsAsk": "The studio log has errors. Look at them (log_errors) and briefly say what may cause them and what to do.",
+    "skip": "Dismiss",
+    "askClaude": "Ask Claude",
+    "needProject": "Open a project — Claude works in the project chat"
   },
   "newProject": {
     "title": "New project",
@@ -244,7 +246,13 @@
       "mcp__studio__ui_tab": "Opens a tab",
       "mcp__studio__log_errors": "Reads the error log"
     },
-    "undoTurn": "Undo Claude's changes"
+    "undoTurn": "Undo Claude's changes",
+    "modelHint": "Claude model for this chat. Sonnet is faster and cheaper, Opus is for hard tasks.",
+    "models": {
+      "sonnet": "Sonnet",
+      "opus": "Opus",
+      "haiku": "Haiku"
+    }
   },
   "media": {
     "footage": "Footage",
@@ -278,7 +286,7 @@
     "noWave": "The waveform appears after processing"
   },
   "edit": {
-    "safe": "Safe zone",
+    "safe": "Platform zone",
     "mute": "Mute",
     "lock": "Lock",
     "empty": "Drag files from media onto tracks",
@@ -326,6 +334,7 @@
         "v": "zoom"
       }
     },
-    "claudeBusy": "Claude is working on the timeline — wait or stop"
+    "claudeBusy": "Claude is working on the timeline — wait or stop",
+    "safeHint": "Dashed frame — the safe zone of a vertical video: anything outside may be covered by platform buttons and captions. Keep text and key things inside."
   }
 }

@@ -33,6 +33,8 @@ pub fn builder() -> Builder<tauri::Wry> {
         project::project_undo_claude,
         mcp::ui_state_report,
         error::errors_count,
+        error::errors_recent,
+        error::errors_clear,
         chat::chat_send,
         chat::chat_stop,
         chat::chat_new_session,

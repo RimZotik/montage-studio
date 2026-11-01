@@ -55,3 +55,6 @@
 ## Git
 
 - Разработка — в ветке `develop`, выпуск — PR в `main`.
+- Коммиты, сделанные с Claude, — со строкой `Co-Authored-By: Claude <noreply@anthropic.com>` в
+  конце (служебная строка: GitHub показывает Claude среди участников); в тексте коммита о Claude
+  не писать.

@@ -17,6 +17,7 @@ import { type AppError, type ComponentId, type ComponentProgress, type Limits, t
 import { errorText } from "@/shared/lib/format";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
+import { ErrorsPopover } from "./ErrorsPopover";
 import { LimitsIndicator } from "./Limits";
 import { Palette } from "./Palette";
 import { type MenuSpec, TitleBar } from "./TitleBar";
@@ -414,21 +415,17 @@ export function App() {
           </span>
         )}
         {claude && <span className="ic">{claude.version ? t("status.claude", { version: claude.version }) : t("status.noClaude")}</span>}
-        {errors > 0 && (
-          <button
-            className="ic errs end"
-            title={t("status.errorsHint")}
-            onClick={() => {
-              if (!project) return;
-              setChatOpen(true);
-              void ipc.chatSend(t("status.errorsAsk"), "user").then((r) => r.status === "error" && fail(r.error));
-            }}
-          >
-            <TriangleAlert size={12} strokeWidth={1.75} />
-            {t("status.errors", { count: errors })}
-          </button>
-        )}
-        <button className={`ic ${errors > 0 ? "" : "end"}`} onClick={() => void toggleLanguage()}>
+        <span className="end" />
+        <ErrorsPopover
+          count={errors}
+          canAsk={!!project}
+          onCleared={() => setErrors(0)}
+          onAsk={() => {
+            setChatOpen(true);
+            void ipc.chatSend(t("status.errorsAsk"), "user").then((r) => r.status === "error" && fail(r.error));
+          }}
+        />
+        <button className="ic" onClick={() => void toggleLanguage()}>
           <Languages size={12} strokeWidth={1.75} />
           {i18n.language.toUpperCase()}
         </button>

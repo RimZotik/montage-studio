@@ -201,7 +201,7 @@ fn cache_file(dir: &Path, rel: &str, language: &str) -> AppResult<PathBuf> {
     let meta = std::fs::metadata(dir.join(rel))?;
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (crate::media::key(rel, &meta), language).hash(&mut h);
-    Ok(dir.join(".studio/cache/speech").join(format!("{:016x}.json", h.finish())))
+    Ok(crate::cache::dir(dir, crate::cache::Kind::Speech).join(format!("{:016x}.json", h.finish())))
 }
 
 fn language_ok(l: &str) -> bool {

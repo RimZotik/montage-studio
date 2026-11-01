@@ -8,6 +8,12 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	settingsGet: () => __TAURI_INVOKE<Settings>("settings_get"),
+	/**  Изменить значения интерфейса пачкой, остальное не трогается. */
+	settingsSetUi: (values: Json) => typedError<null, AppError>(__TAURI_INVOKE("settings_set_ui", { values })),
+	cacheUsage: () => typedError<CacheEntry[], AppError>(__TAURI_INVOKE("cache_usage")),
+	/**  Очистить кэш по имени из `cache_usage`. Другие имена не принимаются: чистится только кэш. */
+	cacheClear: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("cache_clear", { id })),
+	trackEffectAdd: (id: string, params: Json, track: string) => typedError<null, AppError>(__TAURI_INVOKE("track_effect_add", { id, params, track })),
 	settingsUpdate: (value: Settings) => typedError<Settings, AppError>(__TAURI_INVOKE("settings_update", { value })),
 	/**  Проверить все программы и железо (в фоне: запуск программ занимает до секунды). */
 	systemCheck: () => typedError<SystemReport, AppError>(__TAURI_INVOKE("system_check")),
@@ -36,7 +42,7 @@ export const commands = {
 	projectCurrent: () => __TAURI_INVOKE<{
 	path: string,
 	project: ProjectFile,
-	tracks: Track[],
+	tracks: Track_Serialize[],
 	clips: Clip_Serialize[],
 	markers: Marker[],
 	canUndo: boolean,
@@ -152,6 +158,14 @@ export type AppliedEffect = {
 	spec?: any,
 };
 
+export type CacheEntry = {
+	id: string,
+	/**  `project` или `app`. */
+	scope: string,
+	bytes: number,
+	files: number,
+};
+
 /**  Чем становится дорожка субтитров в готовом ролике. */
 export type CaptionMode = 
 /**  Свои субтитры: текст поверх кадра, часть картинки. */
@@ -184,6 +198,23 @@ export type ChatItem = {
 };
 
 export type Clip = Clip_Serialize | Clip_Deserialize;
+
+/**  Какие клипы выбрать, не перечисляя их: условия складываются. Пустое условие выбирает все. */
+export type ClipFilter = {
+	ids?: string[],
+	track?: string | null,
+	trackKind?: TrackKind | null,
+	kind?: ClipKind | null,
+	/**  Часть пути файла. */
+	src?: string | null,
+	/**  Часть текста субтитра, без учета регистра. */
+	text?: string | null,
+	/**  Клип пересекает участок кадров. */
+	from?: number | null,
+	to?: number | null,
+	/**  На клипе есть эффект библиотеки с этим ID. */
+	effect?: string | null,
+};
 
 export type ClipKind = 
 /**  Файл медиа (видео, звук, картинка). */
@@ -578,7 +609,14 @@ export type Op = { op: "addClip"; track: string; kind: ClipKind; src: string | n
 /**  Наложить эффект на клип. */
 { op: "addEffect"; clip: string; effect: AppliedEffect } | 
 /**  Изменить эффект на клипе: значения (добавляются к прежним), вкл/выкл, панель, анимацию. */
-{ op: "setEffect"; clip: string; fx: string; params?: any; enabled?: boolean | null; controls?: any; spec?: any } | { op: "removeEffect"; clip: string; fx: string } | { op: "addMarker"; frame: number; label: string } | { op: "removeMarker"; frame: number };
+{ op: "setEffect"; clip: string; fx: string; params?: any; enabled?: boolean | null; controls?: any; spec?: any } | { op: "removeEffect"; clip: string; fx: string } | 
+/**  Эффект на всю дорожку (и на будущие клипы). */
+{ op: "addTrackEffect"; track: string; effect: AppliedEffect } | { op: "setTrackEffect"; track: string; fx: string; params?: any; enabled?: boolean | null; controls?: any; spec?: any } | { op: "removeTrackEffect"; track: string; fx: string } | 
+/**
+ *  Одна правка на много клипов по условию `select` (вместо операции на каждый): свойства; значения
+ *  или вкл/выкл эффекта библиотеки `effect`; наложить `add`; снять `removeEffect`.
+ */
+{ op: "editWhere"; select: ClipFilter; props?: ClipPropsPatch | null; effect?: string | null; params?: any; enabled?: boolean | null; add?: AppliedEffect | null; removeEffect?: string | null } | { op: "addMarker"; frame: number; label: string } | { op: "removeMarker"; frame: number };
 
 export type Pack = {
 	version?: number,
@@ -606,6 +644,11 @@ export type Probe = {
 	height: number | null,
 	audio: boolean,
 	video: boolean,
+	/**
+	 *  Самый большой промежуток между опорными кадрами в начале файла, секунд: перемотка ждет
+	 *  декодирование от прошлого опорного.
+	 */
+	keyframeS?: number | null,
 };
 
 export type ProjectChanged = ProjectChanged_Serialize | ProjectChanged_Deserialize;
@@ -643,7 +686,7 @@ export type ProjectView = ProjectView_Serialize | ProjectView_Deserialize;
 export type ProjectView_Deserialize = {
 	path: string,
 	project: ProjectFile,
-	tracks: Track[],
+	tracks: Track_Deserialize[],
 	clips: Clip_Deserialize[],
 	markers: Marker[],
 	canUndo: boolean,
@@ -657,7 +700,7 @@ export type ProjectView_Deserialize = {
 export type ProjectView_Serialize = {
 	path: string,
 	project: ProjectFile,
-	tracks: Track[],
+	tracks: Track_Serialize[],
 	clips: Clip_Serialize[],
 	markers: Marker[],
 	canUndo: boolean,
@@ -689,6 +732,11 @@ export type Settings = {
 	projectsDir?: string | null,
 	/**  Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`. */
 	claudeModel?: string,
+	/**
+	 *  Значения интерфейса: ключ `область.имя` → любое значение (`useSetting`, `docs/settings.md`).
+	 *  Новой настройке не нужен новый код в ядре и новая версия файла.
+	 */
+	ui?: any,
 };
 
 export type Skipped = {
@@ -754,7 +802,11 @@ export type ToolStatus = {
 	downloadMb: number | null,
 };
 
-export type Track = {
+export type Track = Track_Serialize | Track_Deserialize;
+
+export type TrackKind = "video" | "audio" | "captions";
+
+export type Track_Deserialize = {
 	id: string,
 	kind: TrackKind,
 	name: string,
@@ -764,9 +816,29 @@ export type Track = {
 	volume?: number | null,
 	/**  Только у субтитров. */
 	captionMode?: CaptionMode,
+	/**
+	 *  Эффекты всей дорожки: действуют на каждый клип, в том числе будущие; анимация от начала и конца
+	 *  — у каждого клипа своя.
+	 */
+	effects?: AppliedEffect[],
 };
 
-export type TrackKind = "video" | "audio" | "captions";
+export type Track_Serialize = {
+	id: string,
+	kind: TrackKind,
+	name: string,
+	muted: boolean,
+	locked: boolean,
+	/**  Громкость всей дорожки 0–2. */
+	volume: number | null,
+	/**  Только у субтитров. */
+	captionMode: CaptionMode,
+	/**
+	 *  Эффекты всей дорожки: действуют на каждый клип, в том числе будущие; анимация от начала и конца
+	 *  — у каждого клипа своя.
+	 */
+	effects?: AppliedEffect[],
+};
 
 /**  Команда интерфейсу от Claude (перейти к кадру, выделить, вкладка, масштаб). */
 export type UiCommand = { kind: "seek"; frame: number } | { kind: "select"; ids: string[] } | { kind: "tab"; tab: string } | 

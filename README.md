@@ -28,6 +28,8 @@
 | Формат проекта и таймлайна | [docs/project-format.md](docs/project-format.md) |
 | Инструменты пользователя, библиотека, каталог | [docs/extensions.md](docs/extensions.md) |
 - [docs/export.md](docs/export.md) — экспорт: движок рендера, пресеты качества
+- [docs/settings.md](docs/settings.md) — настройки программы
+- [docs/storage.md](docs/storage.md) — где что лежит, кэш
 | Интерфейс: окно, меню, страницы, горячие клавиши | [docs/ui.md](docs/ui.md) |
 | Оформление: цвета, шрифты, элементы, анимации | [docs/design.md](docs/design.md) |
 | Порядок работ | [docs/roadmap.md](docs/roadmap.md) |

@@ -108,7 +108,9 @@
   проигрывателем — без пауз и потерянных кадров; свойства частей применяются по кадрам.
 - Правка — пакет операций `timeline_apply(ops, label)`: `addClip`, `addLinked`, `moveClip`, `trimClip`,
   `splitClip`, `deleteClips` (с `ripple`), `setProps`, `setText`, `setTrack`, `addTrack`,
-  `removeTrack`, `duplicateClips`, `arrangeClips`, `setLink`, `addMarker`,
+  `removeTrack`, `duplicateClips`, `arrangeClips`, `setLink`, `addTrackEffect`, `setTrackEffect`,
+  `removeTrackEffect`, `editWhere` (одна правка на все клипы по условию: дорожка, вид, файл, текст,
+  участок, эффект), `addMarker`,
   `removeMarker`. Пакет применяется целиком или не применяется (закрепленная дорожка, неподходящий вид клипа — отказ), один шаг отмены. Этими же операциями
   будет править Claude (MCP студии).
 

@@ -26,6 +26,10 @@ pub struct Probe {
     pub height: Option<u32>,
     pub audio: bool,
     pub video: bool,
+    /// Самый большой промежуток между опорными кадрами в начале файла, секунд: перемотка ждет
+    /// декодирование от прошлого опорного.
+    #[serde(default)]
+    pub keyframe_s: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Type, PartialEq)]
@@ -108,7 +112,25 @@ pub fn probe(ffprobe: &Path, file: &Path) -> Option<Probe> {
         height: video.and_then(|s| s["height"].as_u64()).and_then(|n| u32::try_from(n).ok()),
         audio: streams.iter().any(|s| s["codec_type"] == "audio"),
         video: video.is_some(),
+        keyframe_s: None,
     })
+}
+
+/// Промежуток между опорными кадрами по строкам `время,флаги` из ffprobe.
+pub fn keyframe_gap(lines: &str) -> Option<f64> {
+    let keys: Vec<f64> = lines.lines().filter_map(|l| l.split_once(',')).filter(|(_, f)| f.starts_with('K')).filter_map(|(t, _)| t.trim().parse().ok()).collect();
+    let all: Vec<f64> = lines.lines().filter_map(|l| l.split_once(',')).filter_map(|(t, _)| t.trim().parse().ok()).collect();
+    let span = all.iter().copied().fold(0.0_f64, f64::max);
+    let first = *keys.first()?;
+    let widest = keys.windows(2).map(|w| w[1] - w[0]).fold(first, f64::max);
+    // Хвост без опорных кадров — тоже ожидание.
+    Some(widest.max(span - keys.last().copied().unwrap_or(0.0)))
+}
+
+/// Как часто в файле опорные кадры: смотрятся первые 30 секунд, без декодирования.
+fn keyframes(ffprobe: &Path, file: &Path) -> Option<f64> {
+    let out = quiet(Command::new(ffprobe).args(["-v", "error", "-select_streams", "v:0", "-read_intervals", "%+30", "-show_entries", "packet=pts_time,flags", "-of", "csv=p=0"]).arg(file)).output().ok()?;
+    keyframe_gap(&String::from_utf8_lossy(&out.stdout))
 }
 
 fn thumb(ffmpeg: &Path, file: &Path, out: &Path, at_s: f64) -> bool {
@@ -143,7 +165,7 @@ pub fn key(rel: &str, meta: &std::fs::Metadata) -> String {
 /// Список медиа. `ffprobe`/`ffmpeg` = `None` — только готовое из кэша (быстро, для интерфейса);
 /// с ними — недостающие данные и миниатюры строятся (фоном, `media_list`).
 pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppResult<Vec<MediaItem>> {
-    let cache_dir = dir.join(".studio").join("cache");
+    let cache_dir = crate::cache::root(dir);
     let cache_file = cache_dir.join("probe.json");
     let mut cache: ProbeCache = std::fs::read(&cache_file).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
     let mut dirty = false;
@@ -158,7 +180,7 @@ pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppRes
             let name = entry.file_name().to_string_lossy().into_owned();
             let rel = format!("media/{cat}/{name}");
             let k = key(&rel, &meta);
-            let probe = match (cache.items.get(&k), ffprobe) {
+            let mut probe = match (cache.items.get(&k), ffprobe) {
                 (Some(p), _) => Some(p.clone()),
                 (None, Some(fp)) if cat != "images" => {
                     let p = probe(fp, &entry.path());
@@ -170,6 +192,15 @@ pub fn list(dir: &Path, ffprobe: Option<&Path>, ffmpeg: Option<&Path>) -> AppRes
                 }
                 _ => None,
             };
+            // Опорные кадры нужны только футажу; у записи из старого кэша поля еще нет.
+            if let (Some(p), Some(fp), "footage") = (probe.as_mut(), ffprobe, cat)
+                && p.video
+                && p.keyframe_s.is_none()
+            {
+                p.keyframe_s = keyframes(fp, &entry.path());
+                cache.items.insert(k.clone(), p.clone());
+                dirty = true;
+            }
             // Имя файла кэша — SHA-256 ключа (стабильно между версиями программы).
             let digest = <sha2::Sha256 as sha2::Digest>::digest(k.as_bytes());
             let id: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
@@ -268,13 +299,14 @@ pub struct MediaJobs(std::sync::atomic::AtomicBool);
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 pub struct MediaChanged;
 
-/// Нужна ли облегченная копия: кадр больше Full HD или поток выше 30 Мбит/с. Обычному файлу она не
-/// нужна — браузер и так играет его без задержек.
+/// Нужна ли облегченная копия: кадр больше Full HD, поток выше 30 Мбит/с или редкие опорные кадры —
+/// перемотка такого файла ждет декодирование всех кадров от прошлого опорного. Файлу с частыми
+/// опорными кадрами она не нужна: браузер и так перематывает его сразу.
 pub fn wants_proxy(item: &MediaItem) -> bool {
     let Some(p) = item.probe.as_ref().filter(|p| p.video) else { return false };
     let long_side = p.width.unwrap_or(0).max(p.height.unwrap_or(0));
     let mbps = p.duration_s.filter(|d| *d > 0.0).map_or(0.0, |d| item.size as f64 * 8.0 / d / 1_000_000.0);
-    item.category == "footage" && (long_side > 2160 || mbps > 30.0)
+    item.category == "footage" && (long_side > 2160 || mbps > 30.0 || p.keyframe_s.is_some_and(|g| g > 0.75))
 }
 
 /// Копии строятся фоном, по одной: ПК не перегружается, работать можно сразу.
@@ -287,7 +319,7 @@ fn start_proxies(app: &AppHandle, dir: &Path, items: &[MediaItem]) {
             let k = key(&i.path, &std::fs::metadata(dir.join(&i.path)).ok()?);
             let digest = <sha2::Sha256 as sha2::Digest>::digest(k.as_bytes());
             let id: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
-            Some((dir.join(&i.path), dir.join(".studio/cache/proxy").join(format!("{id}.mp4"))))
+            Some((dir.join(&i.path), crate::cache::dir(dir, crate::cache::Kind::Proxy).join(format!("{id}.mp4"))))
         })
         .collect();
     let Some(ffmpeg) = find(app, ToolId::Ffmpeg) else { return };
@@ -299,9 +331,9 @@ fn start_proxies(app: &AppHandle, dir: &Path, items: &[MediaItem]) {
         for (file, out) in todo {
             let _ = std::fs::create_dir_all(out.parent().unwrap_or(Path::new(".")));
             let tmp = out.with_extension("tmp.mp4");
-            // Частые опорные кадры: перемотка без ожидания.
+            // Опорный кадр часто, без кадров назад, легкое декодирование: перемотка без ожидания.
             let mut c = Command::new(&ffmpeg);
-            c.args(["-v", "error", "-y", "-threads", "2", "-i"]).arg(&file).args(["-vf", "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-g", "15", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]).arg(&tmp);
+            c.args(["-v", "error", "-y", "-threads", "2", "-i"]).arg(&file).args(["-vf", "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-g", "10", "-bf", "0", "-tune", "fastdecode", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]).arg(&tmp);
             let ok = quiet(&mut c).status().is_ok_and(|s| s.success()) && std::fs::rename(&tmp, &out).is_ok();
             if ok {
                 log::info!("proxy ready: {}", out.display());
@@ -367,6 +399,18 @@ pub fn media_move(project: State<'_, ProjectState>, path: String, category: Stri
     std::fs::create_dir_all(&target_dir)?;
     std::fs::rename(&src, free_name(&target_dir, &name))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod keyframe_tests {
+    use super::keyframe_gap;
+
+    #[test]
+    fn gap_is_the_widest_wait() {
+        assert_eq!(keyframe_gap("0.0,K__\n0.5,___\n1.0,K__\n1.5,___\n"), Some(1.0));
+        assert_eq!(keyframe_gap("0.0,K__\n1.0,___\n5.0,___\n"), Some(5.0), "один опорный на весь отрезок");
+        assert_eq!(keyframe_gap(""), None);
+    }
 }
 
 #[cfg(test)]

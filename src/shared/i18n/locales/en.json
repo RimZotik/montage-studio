@@ -28,7 +28,8 @@
     "checkUpdates": "Check for updates",
     "installUpdate": "Install update",
     "closeProject": "Close project",
-    "chat": "Claude chat"
+    "chat": "Claude chat",
+    "settings": "Settings"
   },
   "tabs": {
     "home": "Home",
@@ -154,7 +155,9 @@
     "noCaptions": "The captions track is empty",
     "badCaptions": "Could not read the captions file: use .srt, .vtt or .ass with lines",
     "notExport": "This file is not among the finished videos",
-    "badPreview": "A preview can only use a frame of this project"
+    "badPreview": "A preview can only use a frame of this project",
+    "invalidCache": "Unknown cache",
+    "invalidSetting": "Setting not saved: the value is too large"
   },
   "install": {
     "install": "Install · {{mb}} MB",
@@ -408,7 +411,8 @@
       "track": "Track",
       "addVideoTrack": "Add video track",
       "addAudioTrack": "Add audio track",
-      "removeTrack": "Remove track"
+      "removeTrack": "Remove track",
+      "barHint": "Drag to scroll, drag the edges to zoom"
     },
     "captionMode": {
       "burned": "Own captions: text in the picture",
@@ -420,7 +424,26 @@
       "imported": "Lines loaded: {{count}}",
       "saved": "Captions files saved next to the videos"
     },
-    "manySelected": "{{count}} clips selected. Properties belong to one clip; moving, splitting and deleting work on all."
+    "manySelected": "{{count}} clips selected. Properties belong to one clip; moving, splitting and deleting work on all.",
+    "trackPanel": {
+      "title": "Track",
+      "open": "Track properties",
+      "all": "All clips on the track: {{count}}",
+      "effects": "Effects of the whole track",
+      "add": "Add an effect to the whole track",
+      "onClips": "Already on clips",
+      "toTrack": "Make it a track effect",
+      "removeAll": "Remove from all clips",
+      "mode": {
+        "burned": "Own",
+        "file": "As a file"
+      },
+      "hint": {
+        "captions": "Everything set here applies to current and new captions.",
+        "video": "Everything set here applies to current and new clips of this track.",
+        "audio": "Volume and effects of the whole track."
+      }
+    }
   },
   "crash": {
     "title": "The page did not open",
@@ -506,7 +529,9 @@
       "tool": "Open panel"
     },
     "copySuffix": "copy",
-    "deletePackSure": "Really delete? Items move to Main"
+    "deletePackSure": "Really delete? Items move to Main",
+    "appliedTrack": "Effect on the whole track",
+    "applyToTrack": "Apply to the whole track"
   },
   "export": {
     "title": "Export the video",
@@ -560,6 +585,28 @@
     "deleteSure": "Click again to delete",
     "noFrames": "The timeline is empty",
     "previewCap": "This is how the video will look",
-    "backToProject": "Back to the project"
+    "backToProject": "Back to the project",
+    "nothingToShow": "The finished video will be here"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "model": "Claude model",
+    "projectsDir": "New projects folder",
+    "notSet": "Not selected",
+    "safeZone": "Platform zone in the monitor",
+    "snap": "Timeline snapping",
+    "cache": "Cache",
+    "cacheHint": "Clearing is safe: everything is rebuilt when needed.",
+    "clear": "Clear",
+    "reset": "Reset interface settings",
+    "done": "Done",
+    "caches": {
+      "thumbs": "Project thumbnails",
+      "proxy": "Light copies for the monitor",
+      "speech": "Speech transcripts",
+      "frames": "Check frames",
+      "sounds": "Sounds for listening"
+    }
   }
 }

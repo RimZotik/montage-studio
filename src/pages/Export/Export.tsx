@@ -1,11 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Player } from "@remotion/player";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Captions, CircleX, Clapperboard, Download, Folder, FolderOpen, Loader, Play, RotateCcw, Trash2 } from "lucide-react";
+import { Captions, CircleX, Clapperboard, Download, Folder, FolderOpen, Loader, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TimelineComposition } from "@/render/TimelineComposition";
+import { useSetting } from "@/shared/settings/settings";
 import { type AppError, type ExportProgress, type ExportStatus, type ProjectView, commands as ipc, events } from "@/shared/ipc/bindings";
 
 const QUALITY = ["high", "max", "compact"] as const;
@@ -18,18 +17,24 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
   const { t } = useTranslation();
   const [status, setStatus] = useState<ExportStatus | null>(null);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
-  const [quality, setQuality] = useState<(typeof QUALITY)[number]>("high");
-  const [codec, setCodec] = useState<(typeof CODEC)[number]>("h264");
-  const [half, setHalf] = useState(false);
+  const [quality, setQuality] = useSetting<(typeof QUALITY)[number]>("export.quality", "high");
+  const [codec, setCodec] = useSetting<(typeof CODEC)[number]>("export.codec", "h264");
+  const [half, setHalf] = useSetting("export.half", false);
   const [name, setName] = useState("");
   const [playing, setPlaying] = useState<string | null>(null);
   const [sure, setSure] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Выбранный файл должен быть в списке: удаленный не показывается, готовый только что — показывается.
+  const files = useMemo(() => status?.files ?? [], [status]);
+  const shown = files.some((f) => f.path === playing) ? playing : (files[0]?.path ?? null);
+  const shownFile = files.find((f) => f.path === shown);
 
   const reload = useCallback(() => void ipc.exportStatus().then((r) => (r.status === "ok" ? setStatus(r.data) : onError(r.error))), [onError]);
   useEffect(() => {
     reload();
     const off = events.exportProgress.listen(({ payload }) => {
       setProgress(payload);
+      if (payload.phase === "done" && payload.output) setPlaying(payload.output);
       if (["done", "error", "cancelled", "installed"].includes(payload.phase)) reload();
     });
     return () => void off.then((f) => f());
@@ -44,8 +49,6 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
   const running = !!status?.running || phase === "render" || phase === "encode" || phase === "finish";
   const pct = Math.round((progress?.progress ?? 0) * 100);
 
-  const srcOf = useCallback((p: string) => convertFileSrc(`${view.path}\\${p.replaceAll("/", "\\")}`), [view.path]);
-  const preview = useMemo(() => ({ sequence: seq, tracks: view.tracks, clips: view.clips, srcOf }), [seq, view.tracks, view.clips, srcOf]);
   const soft = view.tracks.some((t) => t.kind === "captions" && t.captionMode === "file");
 
   const chooseDir = async () => {
@@ -59,13 +62,15 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
   const removeFile = async (path: string) => {
     if (sure !== path) return setSure(path);
     setSure(null);
-    if (playing === path) {
-      setPlaying(null);
-      // Проигрыватель отпускает файл только после снятия с экрана, иначе Windows не даст удалить.
+    // Проигрыватель отпускает файл только после снятия с экрана, иначе Windows не даст удалить.
+    if (shown === path) {
+      setDeleting(true);
       await new Promise((ok) => setTimeout(ok, 150));
     }
     const r = await ipc.exportDelete(path);
+    setDeleting(false);
     if (r.status === "error") return onError(r.error);
+    if (playing === path) setPlaying(null);
     reload();
   };
 
@@ -164,58 +169,67 @@ export function ExportPage({ view, onError }: { view: ProjectView; onError: (e: 
         {phase === "error" && progress?.message && <p className="exerr">{progress.message}</p>}
       </section>
 
-      <section className="exfiles">
-        <div className="exstage">
-          {playing ? (
-            <video key={playing} className="explay" src={convertFileSrc(playing)} controls autoPlay />
-          ) : frames > 0 ? (
-            <div className="exframe" style={{ aspectRatio: `${seq.width} / ${seq.height}` }}>
-              <Player component={TimelineComposition} inputProps={preview} durationInFrames={Math.max(1, frames)} compositionWidth={seq.width} compositionHeight={seq.height} fps={seq.fps} initialFrame={Math.min(...view.clips.map((c) => c.start))} controls style={{ width: "100%", height: "100%" }} acknowledgeRemotionLicense />
-            </div>
-          ) : (
-            <p className="faint">{t("export.noFrames")}</p>
-          )}
-          <p className="faint exstagecap">{playing ? status?.files.find((f) => f.path === playing)?.name : t("export.previewCap")}</p>
-        </div>
-        <div className="exlist">
-          <div className="exlisthead">
-            <h2>{t("export.files")}</h2>
-            {playing && (
-              <button className="btn quiet" onClick={() => setPlaying(null)}>
-                {t("export.backToProject")}
-              </button>
-            )}
-          </div>
-          {status?.files.length ? (
-            status.files.map((f) => (
-              <div key={f.path} className={`exfile ${playing === f.path ? "on" : ""}`} onDoubleClick={() => setPlaying(f.path)}>
-                <button className="iconbtn" title={t("export.play")} onClick={() => setPlaying(f.path)}>
-                  <Play size={14} strokeWidth={1.75} />
-                </button>
+      <section className="exlist">
+        <h2>{t("export.files")}</h2>
+        {files.length ? (
+          files.map((f) => (
+            <div key={f.path} className={`exfile ${shown === f.path ? "on" : ""}`} onClick={() => setPlaying(f.path)}>
+              <div className="exfilemain">
                 <span className="exname" title={f.path}>
                   {f.name}
                 </span>
-                {!!f.captions.length && (
-                  <span className="exbadge" title={t("export.captionFiles", { list: f.captions.join(", ") })}>
-                    <Captions size={13} strokeWidth={1.75} />
-                  </span>
-                )}
                 <span className="faint mono">
                   {f.width}×{f.height} · {f.durationS?.toFixed(1)} {t("chat.sec")} · {(f.sizeMb ?? 0).toFixed(1)} {t("export.mb")}
-                  {f.mbps ? ` · ${f.mbps.toFixed(1)} ${t("export.mbps")}` : ""}
                 </span>
-                <button className="iconbtn" title={t("export.reveal")} onClick={() => void revealItemInDir(f.path)}>
-                  <FolderOpen size={14} strokeWidth={1.75} />
-                </button>
-                <button className={`iconbtn ${sure === f.path ? "danger" : ""}`} title={sure === f.path ? t("export.deleteSure") : t("export.delete")} onBlur={() => setSure(null)} onClick={() => void removeFile(f.path)}>
-                  <Trash2 size={14} strokeWidth={1.75} />
-                </button>
               </div>
-            ))
-          ) : (
-            <p className="faint">{t("export.noFiles")}</p>
-          )}
-        </div>
+              {!!f.captions.length && (
+                <span className="exbadge" title={t("export.captionFiles", { list: f.captions.join(", ") })}>
+                  <Captions size={13} strokeWidth={1.75} />
+                </span>
+              )}
+              <button
+                className="iconbtn"
+                title={t("export.reveal")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void revealItemInDir(f.path);
+                }}
+              >
+                <FolderOpen size={14} strokeWidth={1.75} />
+              </button>
+              <button
+                className={`iconbtn ${sure === f.path ? "danger" : ""}`}
+                title={sure === f.path ? t("export.deleteSure") : t("export.delete")}
+                onBlur={() => setSure(null)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void removeFile(f.path);
+                }}
+              >
+                <Trash2 size={14} strokeWidth={1.75} />
+              </button>
+            </div>
+          ))
+        ) : (
+          <p className="faint">{t("export.noFiles")}</p>
+        )}
+      </section>
+
+      <section className="exstage">
+        {shown && !deleting ? (
+          <>
+            <video key={shown} className="explay" src={convertFileSrc(shown)} controls />
+            <p className="faint exstagecap">
+              {shownFile?.name}
+              {shownFile?.mbps ? ` · ${shownFile.mbps.toFixed(1)} ${t("export.mbps")}` : ""}
+            </p>
+          </>
+        ) : (
+          <div className="exempty">
+            <Clapperboard size={28} strokeWidth={1.25} />
+            <p className="faint">{t("export.nothingToShow")}</p>
+          </div>
+        )}
       </section>
     </div>
   );

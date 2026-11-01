@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Clip } from "@/shared/ipc/bindings";
-import { runsOf, visibleRuns } from "./TimelineComposition";
+import { runsOf, visibleRuns, withTrackEffects } from "./TimelineComposition";
 
 const clip = (id: string, start: number, duration: number, offset: number, src = "media/footage/a.mp4", volume = 1): Clip => ({ id, track: "v1", kind: "media", src, text: null, start, duration, offset, link: null, props: { volume, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } });
 
@@ -41,5 +41,17 @@ describe("наложение на одной дорожке", () => {
   });
   it("полностью закрытый клип не проигрывается", () => {
     expect(visibleRuns(runsOf([clip("a", "v1", 10, 10), clip("b", "v1", 0, 50)])).filter((x) => x.id.startsWith("a"))).toEqual([]);
+  });
+});
+
+describe("эффекты дорожки", () => {
+  const fx = (effect: string) => ({ id: "fx1", effect, name: effect, enabled: true, params: {}, controls: [], spec: {} }) as never;
+  const c = (id: string, track: string, effects: never[] = []) => ({ id, track, effects }) as never;
+  const t = (id: string, effects: never[]) => ({ id, effects }) as never;
+  it("действуют на все клипы дорожки и идут раньше своих", () => {
+    const out = withTrackEffects([c("a", "s1", [fx("own")]), c("b", "s1"), c("v", "v1")], [t("s1", [fx("look")]), t("v1", [])]) as unknown as { effects: { effect: string }[] }[];
+    expect(out[0]?.effects.map((e) => e.effect)).toEqual(["look", "own"]);
+    expect(out[1]?.effects.map((e) => e.effect)).toEqual(["look"]);
+    expect(out[2]?.effects).toEqual([]);
   });
 });

@@ -25,8 +25,8 @@ pub fn list() -> Value {
         { "name": "captions_file", "description": "Real video captions as files. action export: write .srt, .vtt, .ass next to the videos from the captions track. action import: read a .srt/.vtt/.ass file (path) onto the captions track, replacing what is there, with its look.", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "path": { "type": "string" } }, "required": ["action"] } },
         { "name": "library_save", "description": "Create or update an effect or tool, including its control panel. New items go to `pack` (default main). The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
         { "name": "pack_edit", "description": "Packs. action: list | create (name) | add (pack,item) | remove (pack,item) | delete (pack; its items move to main).", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "pack": { "type": "string" }, "item": { "type": "string" }, "name": { "type": "string" } }, "required": ["action"] } },
-        { "name": "effect_apply", "description": "Put a library effect on clips (default: selection). params override its defaults. One undo step. Returns effect ids on the clips.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "params": { "type": "object" } }, "required": ["id"] } },
-        { "name": "tool_run", "description": "Run a library tool on clips (default: selection, else its track settings). params override its defaults. One undo step. Status pending: run again later.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "params": { "type": "object" } }, "required": ["id"] } },
+        { "name": "effect_apply", "description": "Put a library effect on clips in one call: where (condition, as in editWhere select), clips, or the selection; track = on the whole track, future clips included. params override its defaults. One undo step.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "where": { "type": "object" }, "track": { "type": "string" }, "params": { "type": "object" } }, "required": ["id"] } },
+        { "name": "tool_run", "description": "Run a library tool on clips: where (condition), clips, or the selection, else its track settings. params override its defaults. One undo step. Status pending: run again later.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "where": { "type": "object" }, "params": { "type": "object" } }, "required": ["id"] } },
         { "name": "style_apply", "description": "Put a library style (rules for how the video should be edited) into the project rules/style.md; they join your context from the next message.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
         { "name": "sound_add", "description": "Put a library sound on the timeline so that its hit lands on each of frames (synthesized once into media/sfx), one call for all frames. track default: last audio track; volume 0–2.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frames": { "type": "array", "items": { "type": "integer" } }, "track": { "type": "string" }, "volume": { "type": "number" } }, "required": ["id", "frames"] } },
         { "name": "speech_transcribe", "description": "What is said in a media file or on a clip, phrase by phrase (local model, cached). path — seconds in the file; clip — timeline frames, only what is audible. Status pending: call again.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "clip": { "type": "string" }, "language": { "type": "string" } } } },
@@ -43,7 +43,14 @@ fn text_of(v: &Value) -> String {
     v.as_str().map_or_else(|| v.get("en").or_else(|| v.get("ru")).and_then(Value::as_str).unwrap_or("").to_owned(), str::to_owned)
 }
 
+/// Клипы вызова: условие `where`, список `clips` или выделение.
 fn clips_or_selection(app: &AppHandle, args: &Value) -> Vec<String> {
+    if args["where"].is_object() {
+        let filter: crate::project::timeline::ClipFilter = serde_json::from_value(args["where"].clone()).unwrap_or_default();
+        if let Some((_, doc)) = app.state::<ProjectState>().context() {
+            return filter.select(&doc.timeline.clips, &doc.timeline.tracks);
+        }
+    }
     match serde_json::from_value::<Vec<String>>(args["clips"].clone()) {
         Ok(ids) if !ids.is_empty() => ids,
         _ => app.state::<McpState>().ui.lock().unwrap_or_else(std::sync::PoisonError::into_inner).selected.clone(),
@@ -148,9 +155,14 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
             }
             "effect_apply" => {
                 let id = args["id"].as_str().ok_or("id required")?;
+                if let Some(track) = args["track"].as_str() {
+                    presets::apply_effect_to_track(app, id, &args["params"], track, &turn_label(app)).map_err(|e| format!("refused ({}): {}", e.code, e.message))?;
+                    return Ok(format!("ok: {id} on track {track}"));
+                }
                 let clips = clips_or_selection(app, args);
                 let made = presets::apply_effect(app, id, &args["params"], &clips, &turn_label(app)).map_err(|e| format!("refused ({}): {}", e.code, e.message))?;
-                Ok(format!("ok: {}", clips.iter().zip(&made).map(|(c, f)| format!("{c}/{f}")).collect::<Vec<_>>().join(",")))
+                // Сотню клипов не перечислять: число и первый с последним достаточно.
+                Ok(if clips.len() > 6 { format!("ok: {} clips, {} .. {}", clips.len(), clips.first().map_or("", String::as_str), clips.last().map_or("", String::as_str)) } else { format!("ok: {}", clips.iter().zip(&made).map(|(c, f)| format!("{c}/{f}")).collect::<Vec<_>>().join(",")) })
             }
             "tool_run" => {
                 let id = args["id"].as_str().ok_or("id required")?;

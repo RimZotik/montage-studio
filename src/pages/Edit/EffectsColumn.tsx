@@ -6,6 +6,7 @@ import { type AppError, type LibraryRow, type LibraryView, type ProjectView, typ
 import { Library } from "@/pages/Library/Library";
 import { ControlPanel, defaultsOf, loc } from "@/shared/ui/ControlPanel";
 import { PresetPreview, TargetIcons } from "@/shared/ui/PresetPreview";
+import { useSetting } from "@/shared/settings/settings";
 import { startDrag } from "./dragMedia";
 
 const FILTERS = ["all", "tool", "video", "audio", "text", "transition", "sound", "style"] as const;
@@ -58,13 +59,13 @@ export function playSound(id: string, onError: (e: AppError) => void) {
 /** Вкладка «Эффекты»: каталог библиотеки на «Монтаже» строками. Один щелчок — послушать звук или
  *  открыть карточку; двойной — применить (звук — от головки, эффект — на выделенные клипы); перенос —
  *  на таймлайн. Большой каталог с паками и карточками открывается отдельным окном. */
-export function EffectsColumn({ view, selected, frame, onError, style }: { view: ProjectView; selected: string[]; frame: number; onError: (e: AppError) => void; style?: React.CSSProperties }) {
+export function EffectsColumn({ view, selected, pickedTrack, frame, onError, style }: { view: ProjectView; selected: string[]; pickedTrack: string | null; frame: number; onError: (e: AppError) => void; style?: React.CSSProperties }) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const fps = view.project.sequence.fps;
   const [lib, setLib] = useState<LibraryView | null>(null);
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useSetting<Filter>("effects.filter", "all");
   const [open, setOpen] = useState<LibraryRow | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -127,6 +128,15 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
     [onError, t],
   );
 
+  const applyToTrack = useCallback(
+    async (row: LibraryRow, track: string, params: Record<string, unknown> = {}) => {
+      const r = await ipc.trackEffectAdd(row.item.id, params, track);
+      if (r.status === "error") onError(r.error);
+      else setNote(t("library.appliedTrack"));
+    },
+    [onError, t],
+  );
+
   /** Звук встает так, чтобы начаться в кадре `at` (ядро ставит по точке удара). */
   const placeSound = useCallback(
     (row: LibraryRow, at: number) => {
@@ -142,12 +152,16 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
   const useItem = useCallback(
     (row: LibraryRow) => {
       if (row.item.kind === "sound") placeSound(row, frame);
-      else if (row.item.kind === "effect") void applyEffect(row, selected);
+      else if (row.item.kind === "effect") {
+        // Без выбранных клипов эффект ложится на выбранную дорожку.
+        if (!selected.length && pickedTrack) void applyToTrack(row, pickedTrack);
+        else void applyEffect(row, selected);
+      }
       else if (row.item.kind === "style") applyStyle(row);
       else showCard(row);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyEffect, applyStyle, frame, placeSound, selected],
+    [applyEffect, applyStyle, frame, pickedTrack, placeSound, selected],
   );
 
   const showCard = (row: LibraryRow) => {
@@ -179,7 +193,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
       if (!active && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
       active = true;
       setGhost({ name: loc(row.item.name, lang), x: ev.clientX, y: ev.clientY });
-      hover(document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-clip]") ?? null);
+      hover(document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("[data-clip],[data-head]") ?? null);
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -195,9 +209,11 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
     const up = () => {
       stop();
       const id = over?.dataset.clip;
+      const head = over?.dataset.head;
       hover(null);
       setGhost(null);
       if (active && id) void applyEffect(row, [id]);
+      else if (active && head) void applyToTrack(row, head);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -288,9 +304,9 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
           <p className="faint fxdesc">{loc(open.item.description, lang)}</p>
           <ControlPanel controls={open.item.controls} values={values} tracks={view.tracks} onChange={(id, v) => setValues((x) => ({ ...x, [id]: v }))} />
           {open.item.kind === "effect" ? (
-            <button className="btn pri" disabled={!selected.length} title={selected.length ? undefined : t("library.selectClip")} onClick={() => void applyEffect(open, selected, values)}>
+            <button className="btn pri" disabled={!selected.length && !pickedTrack} title={selected.length || pickedTrack ? undefined : t("library.selectClip")} onClick={() => void (!selected.length && pickedTrack ? applyToTrack(open, pickedTrack, values) : applyEffect(open, selected, values))}>
               <Play size={14} strokeWidth={1.75} />
-              {t("library.applyToSelected")}
+              {!selected.length && pickedTrack ? t("library.applyToTrack") : t("library.applyToSelected")}
             </button>
           ) : open.item.kind === "style" ? (
             <button className="btn pri" onClick={() => applyStyle(open)}>
@@ -349,7 +365,7 @@ export function EffectsColumn({ view, selected, frame, onError, style }: { view:
                   showCard(row);
                 } else useItem(row);
               }}
-              canApply={selected.length > 0}
+              canApply={selected.length > 0 || !!pickedTrack}
             />
           </div>
         </div>

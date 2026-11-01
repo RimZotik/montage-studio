@@ -259,7 +259,11 @@ pub fn parse_ass(raw: &str) -> (Vec<Cue>, HashMap<String, Look>) {
 
 /// Оформление клипа субтитров: первое со `spec.text` среди его эффектов.
 pub fn look_of(clip: &Clip) -> Look {
-    for fx in clip.effects.iter().filter(|f| f.enabled) {
+    look_in(&clip.effects)
+}
+
+fn look_in(effects: &[AppliedEffect]) -> Look {
+    for fx in effects.iter().filter(|f| f.enabled) {
         let text = &fx.spec["text"];
         if text.is_null() {
             continue;
@@ -305,7 +309,8 @@ pub fn write_beside(doc: &Snapshot, video: &Path) -> AppResult<Vec<String>> {
     if cues.is_empty() {
         return Err(AppError::new("noCaptions", "the captions track is empty"));
     }
-    let look = doc.timeline.clips.iter().filter(|c| c.track == track.id).map(look_of).find(|l| *l != Look::default()).unwrap_or_default();
+    // Сначала оформление дорожки, затем первого клипа, у которого оно есть.
+    let look = std::iter::once(look_in(&track.effects)).chain(doc.timeline.clips.iter().filter(|c| c.track == track.id).map(look_of)).find(|l| *l != Look::default()).unwrap_or_default();
     let mut paths = Vec::new();
     for (ext, body) in [("srt", to_srt(&cues)), ("vtt", to_vtt(&cues, &look)), ("ass", to_ass(&cues, &look, seq.width, seq.height))] {
         let p = video.with_extension(ext);

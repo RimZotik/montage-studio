@@ -1,18 +1,19 @@
 import { Player, type PlayerRef } from "@remotion/player";
 import { Pause, Play, Scan, SkipBack, Volume2, VolumeX } from "lucide-react";
-import { type RefObject, useEffect, useMemo, useState } from "react";
+import { type RefObject, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProjectView } from "@/shared/ipc/bindings";
 import { TimelineComposition } from "@/render/TimelineComposition";
+import { useSetting } from "@/shared/settings/settings";
 import { timecode } from "./time";
 
 /** Монитор: плеер композиции «таймлайн» (та же, что пойдет в рендер), транспорт, безопасная зона. */
 export function Monitor({ view, total, playerRef, srcOf, frame, playing }: { view: ProjectView; total: number; playerRef: RefObject<PlayerRef | null>; srcOf: (p: string) => string; frame: number; playing: boolean }) {
   const { t } = useTranslation();
   const seq = view.project.sequence;
-  const [safe, setSafe] = useState(true);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
+  const [safe, setSafe] = useSetting("monitor.safeZone", true);
+  const [volume, setVolume] = useSetting("monitor.volume", 1);
+  const [muted, setMuted] = useSetting("monitor.muted", false);
   useEffect(() => {
     const p = playerRef.current;
     if (!p) return;

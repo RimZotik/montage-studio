@@ -23,6 +23,10 @@ pub struct Settings {
     /// Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`.
     #[serde(default = "sonnet")]
     pub claude_model: String,
+    /// Значения интерфейса: ключ `область.имя` → любое значение (`useSetting`, `docs/settings.md`).
+    /// Новой настройке не нужен новый код в ядре и новая версия файла.
+    #[specta(type = specta_typescript::Any)]
+    pub ui: serde_json::Map<String, serde_json::Value>,
 }
 
 fn sonnet() -> String {
@@ -31,7 +35,7 @@ fn sonnet() -> String {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet() }
+        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet(), ui: serde_json::Map::new() }
     }
 }
 
@@ -48,6 +52,22 @@ impl SettingsState {
 
     pub fn get(&self) -> Settings {
         self.value.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+
+    /// Записать значения интерфейса; `null` — вернуть к умолчанию (ключ убирается).
+    pub fn set_ui(&self, values: serde_json::Map<String, serde_json::Value>) -> AppResult<()> {
+        let mut next = self.get();
+        for (key, value) in values {
+            if key.len() > 120 || value.to_string().len() > 64 * 1024 {
+                return Err(AppError::new("invalidSetting", key));
+            }
+            if value.is_null() {
+                next.ui.remove(&key);
+            } else {
+                next.ui.insert(key, value);
+            }
+        }
+        self.save(next).map(|_| ())
     }
 
     fn save(&self, value: Settings) -> AppResult<Settings> {
@@ -69,7 +89,15 @@ pub fn settings_get(state: State<'_, SettingsState>) -> Settings {
 #[tauri::command]
 #[specta::specta]
 pub fn settings_update(state: State<'_, SettingsState>, value: Settings) -> AppResult<Settings> {
-    state.save(Settings { version: VERSION, ..value })
+    // Значения интерфейса меняются только своей командой: окно могло держать старую копию.
+    state.save(Settings { version: VERSION, ui: state.get().ui, ..value })
+}
+
+/// Изменить значения интерфейса пачкой, остальное не трогается.
+#[tauri::command]
+#[specta::specta]
+pub fn settings_set_ui(state: State<'_, SettingsState>, values: crate::presets::Json) -> AppResult<()> {
+    state.set_ui(values.0.as_object().cloned().unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -81,6 +109,21 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"language":"en","unknown":1}"#).unwrap();
         assert_eq!(s.language, "en");
         assert_eq!(s.projects_dir, None);
+    }
+
+    #[test]
+    fn ui_values_keep_between_runs_and_reset() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let state = SettingsState::load(path.clone());
+        state.set_ui(serde_json::json!({ "monitor.safeZone": false, "layout.edit": { "media": 300 } }).as_object().unwrap().clone()).unwrap();
+        let again = SettingsState::load(path.clone());
+        assert_eq!(again.get().ui["monitor.safeZone"], serde_json::json!(false));
+        again.set_ui(serde_json::json!({ "monitor.safeZone": null }).as_object().unwrap().clone()).unwrap();
+        let last = SettingsState::load(path).get();
+        assert!(!last.ui.contains_key("monitor.safeZone"), "null возвращает к умолчанию");
+        assert!(last.ui.contains_key("layout.edit"), "другие ключи на месте");
+        assert!(state.set_ui(serde_json::json!({ "big": "x".repeat(70_000) }).as_object().unwrap().clone()).is_err());
     }
 
     #[test]

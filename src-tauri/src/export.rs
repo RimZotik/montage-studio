@@ -376,7 +376,7 @@ pub fn still(app: &AppHandle, frame: u32, scale: f64) -> AppResult<PathBuf> {
         return Err(AppError::new("renderEngineMissing", "render engine is not installed"));
     }
     let (dir, doc) = app.state::<ProjectState>().context().ok_or_else(|| AppError::new("noProject", "no project is open"))?;
-    let frames = dir.join(".studio/cache/frames");
+    let frames = crate::cache::dir(&dir, crate::cache::Kind::Frames);
     std::fs::create_dir_all(&frames)?;
     let out = frames.join(format!("f{frame}.jpg"));
     let mut j = job(app, &dir, &doc)?;

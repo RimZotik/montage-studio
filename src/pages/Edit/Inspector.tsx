@@ -5,6 +5,7 @@ import { type AppError, type AppliedEffect, type Clip, type ClipPropsPatch, type
 import { propsOf } from "@/render/TimelineComposition";
 import { ControlPanel, Slider, loc } from "@/shared/ui/ControlPanel";
 import { timecode } from "./time";
+import { TrackPanel } from "./TrackPanel";
 
 type Full = ReturnType<typeof propsOf>;
 
@@ -42,16 +43,18 @@ function EffectCard({ clip, fx, view, apply, lang, onError }: { clip: Clip; fx: 
 
 /** Свойства выбранного клипа: время, громкость, прозрачность, масштаб, сдвиг, плавность; текст
  *  субтитра. Пусто — подсказки и «Субтитр в точке». */
-export function Inspector({ view, clip, frame, apply, onError, selectedCount }: { selectedCount: number; view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean>; onError: (e: AppError) => void }) {
+export function Inspector({ view, clip, frame, apply, onError, selectedCount, pickedTrack }: { selectedCount: number; pickedTrack: string | null; view: ProjectView; clip: Clip | null; frame: number; apply: (ops: Op[], label: string) => Promise<boolean>; onError: (e: AppError) => void }) {
   const { t, i18n } = useTranslation();
   const fps = view.project.sequence.fps;
   const [text, setText] = useState(clip?.text ?? "");
   useEffect(() => setText(clip?.text ?? ""), [clip?.id, clip?.text]);
+  const picked = view.tracks.find((tr) => tr.id === pickedTrack);
   const captionTrack = view.tracks.find((tr) => tr.kind === "captions");
 
   const addCaption = () =>
     captionTrack && void apply([{ op: "addClip", track: captionTrack.id, kind: "caption", src: null, text: t("edit.captionText"), start: frame, duration: fps * 2, offset: null }], "caption");
 
+  if (!clip && picked) return <TrackPanel view={view} track={picked} apply={apply} onError={onError} />;
   if (!clip) {
     return (
       <aside className="inspector">

@@ -9,6 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app/App";
 import { installErrorLogging } from "@/app/ErrorBoundary";
+import { loadSettings } from "@/shared/settings/settings";
 
 // В обычном браузере (разработка интерфейса) — образцы данных вместо ядра.
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
@@ -17,6 +18,8 @@ if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
 }
 
 installErrorLogging();
+// Настройки — до первого показа: панели сразу такие, как их оставили.
+await loadSettings().catch(() => {});
 
 const root = document.getElementById("root");
 if (root) {

@@ -42,6 +42,81 @@ pub struct Track {
     /// Только у субтитров.
     #[serde(default)]
     pub caption_mode: CaptionMode,
+    /// Эффекты всей дорожки: действуют на каждый клип, в том числе будущие; анимация от начала и конца
+    /// — у каждого клипа своя.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effects: Vec<AppliedEffect>,
+}
+
+/// Какие клипы выбрать, не перечисляя их: условия складываются. Пустое условие выбирает все.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ClipFilter {
+    pub ids: Vec<String>,
+    pub track: Option<String>,
+    pub track_kind: Option<TrackKind>,
+    pub kind: Option<ClipKind>,
+    /// Часть пути файла.
+    pub src: Option<String>,
+    /// Часть текста субтитра, без учета регистра.
+    pub text: Option<String>,
+    /// Клип пересекает участок кадров.
+    pub from: Option<u32>,
+    pub to: Option<u32>,
+    /// На клипе есть эффект библиотеки с этим ID.
+    pub effect: Option<String>,
+}
+
+impl ClipFilter {
+    pub fn matches(&self, c: &Clip, tracks: &[Track]) -> bool {
+        (self.ids.is_empty() || self.ids.contains(&c.id))
+            && self.track.as_ref().is_none_or(|t| t == &c.track)
+            && self.track_kind.is_none_or(|k| tracks.iter().any(|t| t.id == c.track && t.kind == k))
+            && self.kind.is_none_or(|k| k == c.kind)
+            && self.src.as_ref().is_none_or(|s| c.src.as_deref().is_some_and(|x| x.contains(s.as_str())))
+            && self.text.as_ref().is_none_or(|s| c.text.as_deref().is_some_and(|x| x.to_lowercase().contains(&s.to_lowercase())))
+            && self.from.is_none_or(|f| c.end() > f)
+            && self.to.is_none_or(|t| c.start < t)
+            && self.effect.as_ref().is_none_or(|e| c.effects.iter().any(|f| &f.effect == e))
+    }
+
+    pub fn select(&self, clips: &[Clip], tracks: &[Track]) -> Vec<String> {
+        clips.iter().filter(|c| self.matches(c, tracks)).map(|c| c.id.clone()).collect()
+    }
+}
+
+/// Изменить эффект: значения добавляются к прежним, остальное заменяется, если задано.
+fn patch_effect(f: &mut AppliedEffect, params: Option<&serde_json::Value>, enabled: Option<bool>, controls: Option<&serde_json::Value>, spec: Option<&serde_json::Value>) {
+    if let Some(p) = params.and_then(serde_json::Value::as_object) {
+        if !f.params.is_object() {
+            f.params = serde_json::json!({});
+        }
+        if let Some(all) = f.params.as_object_mut() {
+            all.extend(p.iter().map(|(k, v)| (k.clone(), v.clone())));
+        }
+    }
+    if let Some(e) = enabled {
+        f.enabled = e;
+    }
+    if let Some(x) = controls {
+        f.controls.clone_from(x);
+    }
+    if let Some(x) = spec {
+        f.spec.clone_from(x);
+    }
+}
+
+/// Положить эффект в список; такой же из библиотеки заменяется, а не копится.
+fn put_effect(list: &mut Vec<AppliedEffect>, effect: &AppliedEffect) -> String {
+    if let Some(old) = list.iter_mut().find(|f| f.effect == effect.effect) {
+        let id = old.id.clone();
+        *old = AppliedEffect { id: id.clone(), ..effect.clone() };
+        return id;
+    }
+    let free = (1..).find(|n| !list.iter().any(|f| f.id == format!("fx{n}"))).unwrap_or(1);
+    let id = format!("fx{free}");
+    list.push(AppliedEffect { id: id.clone(), ..effect.clone() });
+    id
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -210,6 +285,7 @@ pub struct Marker {
 }
 
 /// Операции правки таймлайна (пакет — один шаг истории).
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "op")]
 pub enum Op {
@@ -271,13 +347,49 @@ pub enum Op {
         spec: Option<serde_json::Value>,
     },
     RemoveEffect { clip: String, fx: String },
+    /// Эффект на всю дорожку (и на будущие клипы).
+    AddTrackEffect { track: String, effect: AppliedEffect },
+    SetTrackEffect {
+        track: String,
+        fx: String,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        params: Option<serde_json::Value>,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        controls: Option<serde_json::Value>,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        spec: Option<serde_json::Value>,
+    },
+    RemoveTrackEffect { track: String, fx: String },
+    /// Одна правка на много клипов по условию `select` (вместо операции на каждый): свойства; значения
+    /// или вкл/выкл эффекта библиотеки `effect`; наложить `add`; снять `removeEffect`.
+    EditWhere {
+        select: ClipFilter,
+        #[serde(default)]
+        props: Option<ClipPropsPatch>,
+        #[serde(default)]
+        effect: Option<String>,
+        #[serde(default)]
+        #[specta(type = specta_typescript::Any)]
+        params: Option<serde_json::Value>,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        add: Option<AppliedEffect>,
+        #[serde(default)]
+        remove_effect: Option<String>,
+    },
     AddMarker { frame: u32, label: String },
     RemoveMarker { frame: u32 },
 }
 
 /// Стандартные дорожки нового проекта: две видео, субтитры, голос, музыка, звуки.
 pub fn default_tracks() -> Vec<Track> {
-    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default() };
+    let t = |id: &str, kind, name: &str| Track { id: id.into(), kind, name: name.into(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default(), effects: vec![] };
     vec![t("v2", TrackKind::Video, "V2"), t("v1", TrackKind::Video, "V1"), t("s1", TrackKind::Captions, "S1"), t("a1", TrackKind::Audio, "A1"), t("a2", TrackKind::Audio, "A2"), t("a3", TrackKind::Audio, "A3")]
 }
 
@@ -488,7 +600,7 @@ impl Edit<'_> {
                 };
                 let n = (1..).find(|n| !self.tracks.iter().any(|t| t.id == format!("{letter}{n}"))).unwrap_or(1);
                 let id = format!("{letter}{n}");
-                self.tracks.insert(at, Track { id: id.clone(), kind: *kind, name: id.to_uppercase(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default() });
+                self.tracks.insert(at, Track { id: id.clone(), kind: *kind, name: id.to_uppercase(), muted: false, locked: false, volume: 1.0, caption_mode: CaptionMode::default(), effects: vec![] });
                 Ok(vec![id])
             }
             Op::RemoveTrack { id } => {
@@ -587,24 +699,49 @@ impl Edit<'_> {
             Op::SetEffect { clip, fx, params, enabled, controls, spec } => {
                 let c = self.clip_mut(clip)?;
                 let f = c.effects.iter_mut().find(|f| &f.id == fx).ok_or_else(|| bad(format!("effect {fx} not on clip {clip}")))?;
-                if let Some(p) = params.as_ref().and_then(serde_json::Value::as_object) {
-                    if !f.params.is_object() {
-                        f.params = serde_json::json!({});
-                    }
-                    if let Some(all) = f.params.as_object_mut() {
-                        all.extend(p.iter().map(|(k, v)| (k.clone(), v.clone())));
-                    }
-                }
-                if let Some(e) = enabled {
-                    f.enabled = *e;
-                }
-                if let Some(x) = controls {
-                    f.controls.clone_from(x);
-                }
-                if let Some(x) = spec {
-                    f.spec.clone_from(x);
-                }
+                patch_effect(f, params.as_ref(), *enabled, controls.as_ref(), spec.as_ref());
                 Ok(vec![])
+            }
+            Op::AddTrackEffect { track, effect } => {
+                let t = self.tracks.iter_mut().find(|t| &t.id == track).ok_or_else(|| bad(format!("track {track} not found")))?;
+                Ok(vec![put_effect(&mut t.effects, effect)])
+            }
+            Op::SetTrackEffect { track, fx, params, enabled, controls, spec } => {
+                let t = self.tracks.iter_mut().find(|t| &t.id == track).ok_or_else(|| bad(format!("track {track} not found")))?;
+                let f = t.effects.iter_mut().find(|f| &f.id == fx).ok_or_else(|| bad(format!("effect {fx} not on track {track}")))?;
+                patch_effect(f, params.as_ref(), *enabled, controls.as_ref(), spec.as_ref());
+                Ok(vec![])
+            }
+            Op::RemoveTrackEffect { track, fx } => {
+                let t = self.tracks.iter_mut().find(|t| &t.id == track).ok_or_else(|| bad(format!("track {track} not found")))?;
+                t.effects.retain(|f| &f.id != fx);
+                Ok(vec![])
+            }
+            Op::EditWhere { select, props, effect, params, enabled, add, remove_effect } => {
+                let ids = select.select(self.clips, self.tracks);
+                if ids.is_empty() {
+                    return Err(bad("no clips match the condition"));
+                }
+                for id in &ids {
+                    let t = self.clip_mut(id)?.track.clone();
+                    self.unlocked(&t)?;
+                    let c = self.clip_mut(id)?;
+                    if let Some(p) = props {
+                        c.props.merge(p);
+                    }
+                    if let Some(e) = effect {
+                        for f in c.effects.iter_mut().filter(|f| &f.effect == e) {
+                            patch_effect(f, params.as_ref(), *enabled, None, None);
+                        }
+                    }
+                    if let Some(a) = add {
+                        put_effect(&mut c.effects, a);
+                    }
+                    if let Some(r) = remove_effect {
+                        c.effects.retain(|f| &f.effect != r);
+                    }
+                }
+                Ok(ids)
             }
             Op::RemoveEffect { clip, fx } => {
                 self.clip_mut(clip)?.effects.retain(|f| &f.id != fx);
@@ -716,6 +853,33 @@ mod tests {
         assert!(run(&[media("v2", 0, 10), Op::RemoveTrack { id: "v2".into() }]).2.is_err(), "с клипами — нельзя");
         assert!(run(&[Op::RemoveTrack { id: "v2".into() }]).2.is_ok());
         assert!(run(&[Op::RemoveTrack { id: "v2".into() }, Op::RemoveTrack { id: "v1".into() }]).2.is_err(), "последнюю видеодорожку — нельзя");
+    }
+
+    #[test]
+    fn one_edit_changes_all_matching_clips() {
+        let fx = AppliedEffect { id: String::new(), effect: "look".into(), name: serde_json::json!("L"), enabled: true, params: serde_json::json!({ "size": 40 }), controls: serde_json::json!([]), spec: serde_json::json!({ "text": { "size": "$size" } }) };
+        let cap = |t: &str, s: u32| Op::AddClip { track: "s1".into(), kind: ClipKind::Caption, src: None, text: Some(t.into()), start: s, duration: 10, offset: None };
+        let all = ClipFilter { track_kind: Some(TrackKind::Captions), ..ClipFilter::default() };
+        let edit = |add, effect, params, remove: Option<&str>, select: ClipFilter| Op::EditWhere { select, props: None, effect, params, enabled: None, add, remove_effect: remove.map(str::to_owned) };
+        let (_, clips, r) = run(&[cap("раз", 0), cap("Два", 10), media("v1", 0, 10), edit(Some(fx.clone()), None, None, None, all.clone()), edit(None, Some("look".into()), Some(serde_json::json!({ "size": 80 })), None, ClipFilter { text: Some("два".into()), ..ClipFilter::default() })]);
+        r.unwrap();
+        assert_eq!(clips.iter().filter(|c| c.effects.len() == 1).count(), 2, "только субтитры");
+        assert_eq!(clips[0].effects[0].params["size"], 40);
+        assert_eq!(clips[1].effects[0].params["size"], 80, "условие по тексту, без учета регистра");
+        let (_, clips, r) = run(&[cap("раз", 0), edit(Some(fx.clone()), None, None, None, all.clone()), edit(Some(fx.clone()), None, None, None, all.clone()), edit(None, None, None, Some("look"), all.clone())]);
+        r.unwrap();
+        assert!(clips[0].effects.is_empty(), "повтор не копит, снятие убирает");
+        assert_eq!(run(&[edit(None, None, None, None, all)]).2.unwrap_err().code, "invalidEdit", "ничего не подошло — отказ");
+    }
+
+    #[test]
+    fn track_effect_lives_on_the_track_and_replaces_its_copy() {
+        let fx = AppliedEffect { id: String::new(), effect: "look".into(), name: serde_json::json!("L"), enabled: true, params: serde_json::json!({ "a": 1 }), controls: serde_json::json!([]), spec: serde_json::json!({}) };
+        let (tracks, _, r) = run(&[Op::AddTrackEffect { track: "s1".into(), effect: fx.clone() }, Op::AddTrackEffect { track: "s1".into(), effect: fx }, Op::SetTrackEffect { track: "s1".into(), fx: "fx1".into(), params: Some(serde_json::json!({ "b": 2 })), enabled: None, controls: None, spec: None }]);
+        r.unwrap();
+        let s = tracks.iter().find(|t| t.id == "s1").unwrap();
+        assert_eq!(s.effects.len(), 1);
+        assert_eq!(s.effects[0].params, serde_json::json!({ "a": 1, "b": 2 }));
     }
 
     #[test]

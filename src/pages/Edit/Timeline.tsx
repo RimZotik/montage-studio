@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowLeftToLine, Bookmark, Captions, CheckCheck, Copy, Eye, EyeOff, FileDown, FileUp, Link2, Lock, LockOpen, Magnet, Maximize2, MousePointer2, Plus, Scissors, SplitSquareHorizontal, Sparkles, Trash2, Type, Unlink, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlignVerticalJustifyEnd, AlignVerticalJustifyStart, ArrowLeftToLine, Bookmark, Captions, SlidersHorizontal, CheckCheck, Copy, Eye, EyeOff, FileDown, FileUp, Link2, Lock, LockOpen, Magnet, Maximize2, MousePointer2, Plus, Scissors, SplitSquareHorizontal, Sparkles, Trash2, Type, Unlink, Volume2, VolumeX, ZoomIn, ZoomOut } from "lucide-react";
+import { type MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppError, type Clip, type MediaItem, type Op, type ProjectView, type Track, commands as ipc } from "@/shared/ipc/bindings";
 import { ContextMenu, type MenuItem } from "@/shared/ui/ContextMenu";
@@ -9,6 +9,8 @@ import { type DragPayload, setDropTarget, useDragMedia } from "./dragMedia";
 import { snap, timecode } from "./time";
 
 export type EditTool = "select" | "razor";
+
+export type TimelineApi = { zoomBy: (k: number) => void };
 
 export type TimelineActions = {
   split: () => void;
@@ -40,6 +42,9 @@ type Props = {
   onOpenEffects: () => void;
   onNote: (text: string) => void;
   onError: (e: AppError) => void;
+  pickedTrack: string | null;
+  onPickTrack: (id: string | null) => void;
+  apiRef: MutableRefObject<TimelineApi | null>;
 };
 
 type Drag = { mode: "move" | "trimL" | "trimR"; clip: Clip; ids: Set<string>; x0: number; track: string; start: number; duration: number; offset: number; moved: boolean; collapse: string[] | null };
@@ -50,6 +55,9 @@ type Menu = { x: number; y: number; clip?: Clip; track?: Track; frame: number };
 
 const HEAD = 132;
 const SNAP_PX = 8;
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 40;
+const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
 /** Дорожка подходит для переносимого: картинка и видео — на видео, звук — на звук (видео можно и на
  *  звуковую дорожку — возьмется звук). */
@@ -62,7 +70,7 @@ function fits(track: Track, p: DragPayload): boolean {
 /** Таймлайн: дорожки, клипы, линейка, головка, панель инструментов, рамка выделения, контекстные меню;
  *  перенос (и группы), обрезка краев, привязка, подстановка файлов и звуков. Правки уходят пакетами
  *  операций в ядро (одна отмена на действие). */
-export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, onSelect, apply, media, tool, onTool, snapOn, onSnap, actions, onOpenEffects, onNote, onError }: Props) {
+export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, onSelect, apply, media, tool, onTool, snapOn, onSnap, actions, onOpenEffects, onNote, onError, pickedTrack, onPickTrack, apiRef }: Props) {
   const { t } = useTranslation();
   const fps = view.project.sequence.fps;
   const scroller = useRef<HTMLDivElement>(null);
@@ -286,38 +294,100 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     setBox({ x0: x, y0: y, x, y, base: e.shiftKey || e.ctrlKey ? selected : [], moved: false });
   };
 
+  // Масштаб: кадр под курсором остается под курсором. Прокрутка ставится до отрисовки, в том же кадре,
+  // что и новая ширина, поэтому ничего не дергается; значение идет к цели плавно.
+  const zoomNow = useRef(zoom);
+  zoomNow.current = zoom;
+  const pendingScroll = useRef<number | null>(null);
+  const zoomAnim = useRef<{ target: number; frame: number; px: number; raf: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (el && pendingScroll.current != null) el.scrollLeft = pendingScroll.current;
+    pendingScroll.current = null;
+  }, [zoom]);
+  useEffect(() => () => cancelAnimationFrame(zoomAnim.current?.raf ?? 0), []);
+
+  const zoomAround = useCallback(
+    (target: number, px: number) => {
+      const el = scroller.current;
+      if (!el) return;
+      const goal = clampZoom(target);
+      const at = (px + el.scrollLeft) / zoomNow.current;
+      if (zoomAnim.current) {
+        Object.assign(zoomAnim.current, { target: goal, frame: at, px });
+        return;
+      }
+      const state = { target: goal, frame: at, px, raf: 0 };
+      zoomAnim.current = state;
+      const step = () => {
+        const cur = zoomNow.current;
+        const left = Math.log(state.target / cur);
+        const next = Math.abs(left) < 0.004 ? state.target : cur * Math.exp(left * 0.4);
+        pendingScroll.current = state.frame * next - state.px;
+        zoomNow.current = next;
+        onZoom(next);
+        if (next === state.target) zoomAnim.current = null;
+        else state.raf = requestAnimationFrame(step);
+      };
+      state.raf = requestAnimationFrame(step);
+    },
+    [onZoom],
+  );
+
+  // Кнопки и клавиши: вокруг головки, если она видна, иначе вокруг середины.
+  const zoomBy = useCallback(
+    (k: number) => {
+      const el = scroller.current;
+      if (!el) return;
+      const seen = frame * zoomNow.current - el.scrollLeft;
+      const room = el.clientWidth - HEAD;
+      zoomAround((zoomAnim.current?.target ?? zoomNow.current) * k, seen >= 0 && seen <= room ? seen : room / 2);
+    },
+    [frame, zoomAround],
+  );
+  useEffect(() => {
+    apiRef.current = { zoomBy };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, zoomBy]);
+
   // Колесо — по времени; Shift+колесо — по дорожкам; Ctrl или Alt+колесо — масштаб к курсору.
-  const onWheel = (e: React.WheelEvent) => {
-    const el = scroller.current;
-    if (!el) return;
-    if (!e.ctrlKey && !e.altKey) {
-      if (e.shiftKey) return;
-      el.scrollLeft += e.deltaY + e.deltaX;
-      return;
-    }
-    const at = frameAt(e.clientX);
-    const z = Math.min(40, Math.max(0.05, zoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
-    onZoom(z);
-    requestAnimationFrame(() => {
-      el.scrollLeft = at * z - (e.clientX - el.getBoundingClientRect().left - HEAD);
-    });
-  };
-
-  const zoomBy = (k: number) => onZoom(Math.min(40, Math.max(0.05, zoom * k)));
-  const fit = () => {
-    const el = scroller.current;
-    if (!el) return;
-    onZoom(Math.min(40, Math.max(0.05, (el.clientWidth - HEAD - 40) / Math.max(1, total))));
-    el.scrollLeft = 0;
-  };
-
-  // Головка в видимой области при воспроизведении.
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const x = frame * zoom;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.altKey) {
+        if (e.shiftKey) return;
+        el.scrollLeft += e.deltaY + e.deltaX;
+        return;
+      }
+      e.preventDefault();
+      const px = e.clientX - el.getBoundingClientRect().left - HEAD;
+      // Сила от прокрутки: колесо шагами и сенсорная панель одинаково плавны.
+      const k = Math.exp(Math.max(-0.5, Math.min(0.5, -e.deltaY * 0.0016)));
+      zoomAround((zoomAnim.current?.target ?? zoomNow.current) * k, Math.max(0, px));
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+  }, [zoomAround]);
+
+  const fit = () => {
+    const el = scroller.current;
+    if (!el) return;
+    cancelAnimationFrame(zoomAnim.current?.raf ?? 0);
+    zoomAnim.current = null;
+    pendingScroll.current = 0;
+    onZoom(clampZoom((el.clientWidth - HEAD - 40) / Math.max(1, total)));
+  };
+
+  // Головка в видимой области при воспроизведении; изменение масштаба ее не трогает.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const x = frame * zoomNow.current;
     if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - HEAD - 40) el.scrollLeft = Math.max(0, x - 80);
-  }, [frame, zoom]);
+  }, [frame]);
 
   // Видимый участок: на большом таймлайне рисуются только клипы рядом с ним.
   const [view0, setView0] = useState({ left: 0, width: 4000 });
@@ -378,7 +448,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
       <>
         {view.tracks.map((tr) => (
           <div key={tr.id} className={`lane ${tr.kind} ${tr.muted ? "muted" : ""} ${tr.locked ? "locked" : ""}`} data-track={tr.id} onPointerDown={onLaneDown} onContextMenu={(e) => openMenu(e, { track: tr })}>
-            <div className="lhead" onContextMenu={(e) => openMenu(e, { track: tr })}>
+            <div className={`lhead ${pickedTrack === tr.id ? "on" : ""}`} data-head={tr.id} title={t("edit.trackPanel.open")} onClick={(e) => !(e.target as HTMLElement).closest("button") && onPickTrack(tr.id)} onContextMenu={(e) => openMenu(e, { track: tr })}>
               <b className={`swatch ${tr.kind}`} />
               <span className="lname">{tr.name}</span>
               <span className="lkind">{tr.kind === "captions" ? t(`edit.captionMode.${tr.captionMode ?? "burned"}Short`) : t(`edit.track.${tr.kind}`)}</span>
@@ -431,7 +501,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
       </>
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [view.tracks, view.clips, previews, selected, zoom, visibleKey, byPath, order, ghostsKey, t, tool, captionRow, drag?.moved],
+    [view.tracks, view.clips, previews, selected, zoom, visibleKey, byPath, order, ghostsKey, t, tool, captionRow, drag?.moved, pickedTrack],
   );
 
   const scrub = (e: React.PointerEvent) => {
@@ -445,6 +515,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
     const sameKind = view.tracks.filter((x) => x.kind === tr.kind).length;
     return [
       { title: `${t("edit.tools.track")} ${tr.name}` },
+      { label: t("edit.trackPanel.open"), icon: SlidersHorizontal, run: () => onPickTrack(tr.id) },
       ...(tr.kind === "captions"
         ? ([
             { label: t("edit.captionMode.burned"), icon: (tr.captionMode ?? "burned") === "burned" ? CheckCheck : Type, run: () => void apply([{ op: "setTrack", id: tr.id, muted: null, locked: null, volume: null, captionMode: "burned" }], "track") },
@@ -492,6 +563,51 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
       "-",
       ...(m.track ? trackOps(m.track) : []),
     ];
+  };
+
+  // Полоса прокрутки: середина — прокрутка, края — масштаб, противоположный край стоит на месте.
+  const barRef = useRef<HTMLDivElement>(null);
+  const framesInContent = width / zoom;
+  const roomPx = Math.max(1, view0.width - HEAD);
+  const barDown = (e: React.PointerEvent, mode: "move" | "left" | "right") => {
+    e.stopPropagation();
+    e.preventDefault();
+    const el = scroller.current;
+    const bar = barRef.current;
+    if (!el || !bar || e.button !== 0) return;
+    const start = { x: e.clientX, a: el.scrollLeft / zoom, b: (el.scrollLeft + roomPx) / zoom };
+    const perPx = framesInContent / Math.max(1, bar.clientWidth);
+    const least = roomPx / ZOOM_MAX;
+    const move = (ev: PointerEvent) => {
+      const d = (ev.clientX - start.x) * perPx;
+      if (mode === "move") {
+        el.scrollLeft = Math.max(0, start.a + d) * zoomNow.current;
+        return;
+      }
+      const a = mode === "left" ? Math.max(0, Math.min(start.a + d, start.b - least)) : start.a;
+      const b = mode === "right" ? Math.min(framesInContent, Math.max(start.b + d, start.a + least)) : start.b;
+      const z = clampZoom(roomPx / (b - a));
+      pendingScroll.current = (mode === "right" ? a : b - roomPx / z) * z;
+      zoomNow.current = z;
+      onZoom(z);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.body.classList.remove("dragging");
+    };
+    document.body.classList.add("dragging");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  };
+  const barJump = (e: React.PointerEvent) => {
+    const el = scroller.current;
+    const bar = barRef.current;
+    if (!el || !bar || e.button !== 0) return;
+    const r = bar.getBoundingClientRect();
+    el.scrollLeft = ((e.clientX - r.left) / r.width) * width - roomPx / 2;
   };
 
   const tip = (key: string, keys?: string) => (keys ? `${t(`edit.tools.${key}`)} (${keys})` : t(`edit.tools.${key}`));
@@ -544,7 +660,7 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
           <ZoomIn size={15} strokeWidth={1.75} />
         </button>
       </div>
-      <div className={`timeline ${tool === "razor" ? "razor" : ""}`} ref={scroller} onWheel={onWheel} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setRazor(null)}>
+      <div className={`timeline ${tool === "razor" ? "razor" : ""}`} ref={scroller} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setRazor(null)}>
         <div className="tl-inner" style={{ width: width + HEAD }}>
           <div className="tl-ruler" onPointerDown={scrub} onPointerMove={(e) => e.buttons === 1 && !drag && !box && onSeek(frameAt(e.clientX))}>
             <div className="tl-corner mono">{timecode(frame, fps)}</div>
@@ -563,6 +679,14 @@ export function Timeline({ view, frame, total, zoom, onZoom, onSeek, selected, o
           {box?.moved && <div className="tlbox" style={{ left: boxLeft, width: boxRight - boxLeft, top: Math.min(box.y0, box.y), height: Math.abs(box.y - box.y0) }} />}
         </div>
         {view.clips.length === 0 && <div className="tl-empty">{t("edit.empty")}</div>}
+      </div>
+      <div className="tlbar" onPointerDown={barJump} style={{ paddingLeft: HEAD }}>
+        <div className="tlbartrack" ref={barRef}>
+          <div className="tlthumb" title={t("edit.tools.barHint")} style={{ left: `${(view0.left / width) * 100}%`, width: `${Math.min(100, (roomPx / width) * 100)}%` }} onPointerDown={(e) => barDown(e, "move")}>
+            <i className="edge l" onPointerDown={(e) => barDown(e, "left")} />
+            <i className="edge r" onPointerDown={(e) => barDown(e, "right")} />
+          </div>
+        </div>
       </div>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={closeMenu} />}
     </div>

@@ -10,6 +10,8 @@ const day = 86400;
 const DATA: Record<string, unknown> = {
   settings_get: { version: 1, language: "", projectsDir: "D:\\Видео\\Проекты" },
   settings_update: null,
+  settings_set_ui: null,
+  cache_usage: [],
   system_check: {
     tools: [
       { id: "claude", found: true, version: "2.1.316", path: "C:\\Users\\user\\.local\\bin\\claude.exe", source: "system", error: null, component: null, latest: null, outdated: false, downloadMb: null },

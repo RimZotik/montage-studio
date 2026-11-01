@@ -3,7 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderClosed, FolderOpen, Gauge, Languages, LogOut, MessageSquare, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2 } from "lucide-react";
+import { CircleCheck, CircleX, Command as CommandIcon, Download, FileText, FolderClosed, FolderOpen, Gauge, Languages, LogOut, MessageSquare, Plus, Redo2, RefreshCw, RotateCw, Search, TriangleAlert, Undo2, Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NewProjectDialog } from "@/pages/Home/NewProjectDialog";
@@ -17,7 +17,9 @@ import { EditPage } from "@/pages/Edit/EditPage";
 import { pickLanguage } from "@/shared/i18n";
 import { type AppError, type ComponentId, type ComponentProgress, type Limits, type ProjectSummary, type ProjectView, type Settings, type SystemReport, type UpdateStatus, commands as ipc, events } from "@/shared/ipc/bindings";
 import { errorText } from "@/shared/lib/format";
+import { useSetting } from "@/shared/settings/settings";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
+import { SettingsDialog } from "./SettingsDialog";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { ErrorsPopover } from "./ErrorsPopover";
@@ -44,14 +46,14 @@ export function App() {
   const [limitsBusy, setLimitsBusy] = useState(false);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [query, setQuery] = useState("");
-  const [dialog, setDialog] = useState<"new" | "palette" | null>(null);
+  const [dialog, setDialog] = useState<"new" | "palette" | "settings" | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [installs, setInstalls] = useState<Partial<Record<ComponentId, ComponentProgress>>>({});
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
   const [project, setProject] = useState<ProjectView | null>(null);
   const [limitsLoaded, setLimitsLoaded] = useState(false);
   const [autoLimits, setAutoLimits] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useSetting("chat.open", true);
   const [rulesKey, setRulesKey] = useState(0);
   const [mediaKey, setMediaKey] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -258,6 +260,7 @@ export function App() {
         keys: `Alt+${i + 1}`,
         run: () => setTab((project ? PROJECT_TABS : HOME_TABS)[i] ?? "home"),
       })),
+      { id: "settings", label: "cmd.settings", icon: Settings2, run: () => setDialog("settings") },
       { id: "language", label: "cmd.language", icon: Languages, run: () => void toggleLanguage() },
       { id: "reload", label: "cmd.reload", icon: RotateCw, keys: "Ctrl+R", run: () => window.location.reload() },
       { id: "refreshChecks", label: "cmd.refreshChecks", icon: RefreshCw, keys: "F5", run: () => void check() },
@@ -275,7 +278,7 @@ export function App() {
     { id: "file", label: "menu.file", items: ["newProject", "openProject", "closeProject", "-", "quit"] },
     { id: "edit", label: "menu.edit", items: ["undo", "redo", "-", "palette"] },
     { id: "view", label: "menu.view", items: ["tab1", "tab2", "tab3", "-", "language", "reload"] },
-    { id: "window", label: "menu.window", items: ["chat", "-", "refreshChecks", "refreshLimits"] },
+    { id: "window", label: "menu.window", items: ["chat", "-", "settings", "-", "refreshChecks", "refreshLimits"] },
     { id: "help", label: "menu.help", items: ["checkUpdates", "installUpdate", "-", "openLogs"] },
   ];
 
@@ -455,6 +458,7 @@ export function App() {
           }}
         />
       )}
+      {dialog === "settings" && settings && <SettingsDialog settings={settings} onSave={(next) => void saveSettings(next)} onClose={() => setDialog(null)} onError={fail} />}
       {dialog === "palette" && <Palette commands={commandList} onClose={() => setDialog(null)} />}
 
       <div className="toasts">

@@ -19,8 +19,8 @@ pub fn list() -> Value {
     json!([
         { "name": "project_summary", "description": "Project, sequence, tracks with clip counts, total length, markers, playhead, selection, open tab.", "inputSchema": { "type": "object", "properties": {} } },
         { "name": "media_list", "description": "Project media files: path, category, duration, size. Optional category filter: footage|voice|music|sfx|images.", "inputSchema": { "type": "object", "properties": { "category": { "type": "string" } } } },
-        { "name": "timeline_get", "description": "Clips overlapping [from,to) frames (default all), optional track id. One line per clip.", "inputSchema": { "type": "object", "properties": { "from": { "type": "integer" }, "to": { "type": "integer" }, "track": { "type": "string" } } } },
-        { "name": "timeline_apply", "description": "Apply a batch of timeline ops atomically (one undo step). Times in frames. Ops: {op:addClip,track,kind:media|caption|solid,src?,text?,start,duration,offset?} {op:addLinked,videoTrack,audioTrack,src,start,duration,offset?} (video with its sound, moved/split/deleted together) {op:moveClip,id,track?,start} {op:trimClip,id,start?,duration?,offset?} {op:splitClip,id,at} {op:deleteClips,ids,ripple} {op:setProps,id,props:{volume,opacity,scale,x,y,fadeIn,fadeOut,speed}} (only the given fields change) {op:setText,id,text} {op:setTrack,id,muted?,locked?,volume?,captionMode?:burned|file} {op:addTrack,kind:video|audio} {op:removeTrack,id} {op:duplicateClips,ids,at?} {op:arrangeClips,ids,top} (order on the track) {op:setLink,ids,linked} {op:setEffect,clip,fx,params?,enabled?,controls?,spec?} {op:removeEffect,clip,fx} {op:addMarker,frame,label} {op:removeMarker,frame}. Clips may overlap on one track: the later one is on top and fully replaces the lower one while they overlap (picture, sound and captions). Caption position: props.y (px from default lower third, negative = up). Solid clip: text is a CSS color or gradient. Returns created clip ids or the reason it was refused.", "inputSchema": { "type": "object", "properties": { "ops": { "type": "array", "items": { "type": "object" } }, "label": { "type": "string" } }, "required": ["ops"] } },
+        { "name": "timeline_get", "description": "Optional where: the same condition as editWhere select. Repeated effects are printed once as #N. Clips overlapping [from,to) frames (default all), optional track id. One line per clip.", "inputSchema": { "type": "object", "properties": { "from": { "type": "integer" }, "to": { "type": "integer" }, "track": { "type": "string" }, "where": { "type": "object" } } } },
+        { "name": "timeline_apply", "description": "Apply timeline ops atomically (one undo step). Frames. Ops: {op:addClip,track,kind:media|caption|solid,src?,text?,start,duration,offset?} {op:addLinked,videoTrack,audioTrack,src,start,duration,offset?} (video with its sound) {op:moveClip,id,track?,start} {op:trimClip,id,start?,duration?,offset?} {op:splitClip,id,at} {op:deleteClips,ids,ripple} {op:setProps,id,props:{volume,opacity,scale,x,y,fadeIn,fadeOut,speed}} {op:setText,id,text} {op:editWhere,select:{ids?,track?,trackKind?,kind?,src?,text?,from?,to?,effect?},props?,effect?,params?,enabled?,add?,removeEffect?} (one edit on all matching clips) {op:setTrackEffect|removeTrackEffect,track,fx,...} {op:setTrack,id,muted?,locked?,volume?,captionMode?:burned|file} {op:addTrack,kind} {op:removeTrack,id} {op:duplicateClips,ids,at?} {op:arrangeClips,ids,top} {op:setLink,ids,linked} {op:setEffect,clip,fx,params?,enabled?,controls?,spec?} {op:removeEffect,clip,fx} {op:addMarker,frame,label} {op:removeMarker,frame}. On one track the later clip replaces the lower one while they overlap. Caption position: props.y (negative = up). Solid clip: text is a color or gradient. Returns created ids or why it was refused.", "inputSchema": { "type": "object", "properties": { "ops": { "type": "array", "items": { "type": "object" } }, "label": { "type": "string" } }, "required": ["ops"] } },
         { "name": "ui_seek", "description": "Move the playhead to a frame (or seconds).", "inputSchema": { "type": "object", "properties": { "frame": { "type": "integer" }, "seconds": { "type": "number" } } } },
         { "name": "ui_select", "description": "Select clips on the timeline by ids (empty — clear).", "inputSchema": { "type": "object", "properties": { "ids": { "type": "array", "items": { "type": "string" } } }, "required": ["ids"] } },
         { "name": "ui_tab", "description": "Open a project tab: prepare|edit|export.", "inputSchema": { "type": "object", "properties": { "tab": { "type": "string" } }, "required": ["tab"] } },
@@ -32,7 +32,41 @@ fn project<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(std::path::PathBuf,
     app.state::<ProjectState>().context().ok_or_else(|| "no project is open".to_owned())
 }
 
-fn clip_line(c: &Clip) -> String {
+/// Повторяющиеся описания выводятся один раз (`#1 = text-style{...}`), в клипах — только номер: сотня
+/// субтитров с одним оформлением не стоит сотню копий в ответе.
+#[derive(Default)]
+struct Legend {
+    seen: std::collections::HashMap<String, u32>,
+    shared: Vec<String>,
+}
+
+fn effect_text(fx: &crate::project::timeline::AppliedEffect) -> String {
+    format!("{}{}{}", fx.effect, fx.params, if fx.enabled { "" } else { " off" })
+}
+
+impl Legend {
+    fn count(clips: &[&Clip]) -> Self {
+        let mut l = Self::default();
+        for fx in clips.iter().flat_map(|c| &c.effects) {
+            *l.seen.entry(effect_text(fx)).or_insert(0) += 1;
+        }
+        l
+    }
+
+    fn mark(&mut self, fx: &crate::project::timeline::AppliedEffect) -> String {
+        let text = effect_text(fx);
+        if self.seen.get(&text).copied().unwrap_or(0) < 2 {
+            return text;
+        }
+        let n = self.shared.iter().position(|x| x == &text).unwrap_or_else(|| {
+            self.shared.push(text.clone());
+            self.shared.len() - 1
+        });
+        format!("#{}", n + 1)
+    }
+}
+
+fn clip_line(c: &Clip, legend: &mut Legend) -> String {
     let what = match (&c.src, &c.text) {
         (Some(s), _) => s.clone(),
         (None, Some(t)) => format!("\"{t}\""),
@@ -59,7 +93,7 @@ fn clip_line(c: &Clip) -> String {
         extra.push(format!("volkeys={}", p.volume_keys.len()));
     }
     for fx in &c.effects {
-        extra.push(format!("{}={}{}{}", fx.id, fx.effect, fx.params, if fx.enabled { "" } else { " off" }));
+        extra.push(format!("{}={}", fx.id, legend.mark(fx)));
     }
     format!("{} {} {:?} {} start={} dur={} off={} {}", c.id, c.track, c.kind, what, c.start, c.duration, c.offset, extra.join(" ")).to_lowercase().trim_end().to_owned()
 }
@@ -113,9 +147,15 @@ pub fn call<R: tauri::Runtime>(app: &AppHandle<R>, name: &str, args: &Value) -> 
             let from = args["from"].as_u64().unwrap_or(0);
             let to = args["to"].as_u64().unwrap_or(u64::MAX);
             let track = args["track"].as_str();
-            let mut clips: Vec<&Clip> = doc.timeline.clips.iter().filter(|c| u64::from(c.end()) > from && u64::from(c.start) < to && track.is_none_or(|t| t == c.track)).collect();
+            let filter: crate::project::timeline::ClipFilter = serde_json::from_value(args["where"].clone()).unwrap_or_default();
+            let mut clips: Vec<&Clip> = doc.timeline.clips.iter().filter(|c| u64::from(c.end()) > from && u64::from(c.start) < to && track.is_none_or(|t| t == c.track) && filter.matches(c, &doc.timeline.tracks)).collect();
             clips.sort_by_key(|c| (c.track.clone(), c.start));
-            Ok(if clips.is_empty() { "no clips".into() } else { clips.iter().map(|c| clip_line(c)).collect::<Vec<_>>().join("\n") })
+            let mut legend = Legend::count(&clips);
+            let lines: Vec<String> = clips.iter().map(|c| clip_line(c, &mut legend)).collect();
+            let mut out: Vec<String> = doc.timeline.tracks.iter().filter(|t| !t.effects.is_empty() && track.is_none_or(|x| x == t.id)).map(|t| format!("track {} effects: {}", t.id, t.effects.iter().map(|f| format!("{}={}", f.id, effect_text(f))).collect::<Vec<_>>().join(" "))).collect();
+            out.extend(legend.shared.iter().enumerate().map(|(i, x)| format!("#{} = {x}", i + 1)));
+            out.extend(lines);
+            Ok(if out.is_empty() { "no clips".into() } else { out.join("\n") })
         }
         "timeline_apply" => {
             let ops: Vec<Op> = serde_json::from_value(args["ops"].clone()).map_err(|e| format!("bad ops: {e}"))?;

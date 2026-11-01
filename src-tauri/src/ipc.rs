@@ -2,7 +2,7 @@
 
 use tauri_specta::{Builder, collect_commands, collect_events};
 
-use crate::{captions, chat, error, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
+use crate::{cache, captions, chat, error, export, checks, claude_limits, components, library, mcp, media, presets, project, projects, rules, settings, speech, updates};
 
 #[cfg(any(debug_assertions, test))]
 pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/shared/ipc/bindings.ts");
@@ -10,6 +10,10 @@ pub const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/sha
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new().commands(collect_commands![
         settings::settings_get,
+        settings::settings_set_ui,
+        cache::cache_usage,
+        cache::cache_clear,
+        presets::track_effect_add,
         settings::settings_update,
         checks::system_check,
         projects::projects_recent,

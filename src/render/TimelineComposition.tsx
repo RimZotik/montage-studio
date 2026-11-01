@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { AbsoluteFill, Html5Audio, Html5Video, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useRemotionEnvironment, useVideoConfig } from "remotion";
 import type { Clip, Sequence as Seq, Track } from "@/shared/ipc/bindings";
 import { effectsAt, volumeAt } from "./effects";
@@ -143,8 +144,19 @@ function CaptionClip({ clip, above }: { clip: Clip; above: Clip[] }) {
   );
 }
 
-export function TimelineComposition({ sequence, tracks, clips, srcOf }: CompositionProps) {
+/** Эффекты дорожки идут первыми и действуют на каждый клип, анимация — от начала и конца этого клипа. */
+export function withTrackEffects(clips: Clip[], tracks: Track[]): Clip[] {
+  const byTrack = new Map(tracks.filter((t) => t.effects?.length).map((t) => [t.id, t.effects ?? []]));
+  if (!byTrack.size) return clips;
+  return clips.map((c) => {
+    const own = byTrack.get(c.track);
+    return own ? { ...c, effects: [...own, ...(c.effects ?? [])] } : c;
+  });
+}
+
+export function TimelineComposition({ sequence, tracks, clips: raw, srcOf }: CompositionProps) {
   const { fps } = useVideoConfig();
+  const clips = useMemo(() => withTrackEffects(raw, tracks), [raw, tracks]);
   const { isRendering } = useRemotionEnvironment();
   const runs = visibleRuns(runsOf(clips));
   const z = new Map(clips.map((c, i) => [c.id, i]));

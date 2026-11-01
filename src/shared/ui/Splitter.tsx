@@ -1,30 +1,11 @@
 import { useCallback, useRef, useState } from "react";
+import { useSetting } from "@/shared/settings/settings";
 
-/** Ширины колонок с запоминанием (у каждой раскладки свой ключ). Удобство одного пользователя —
- *  в localStorage; недоступен — ширины по умолчанию. */
+/** Ширины колонок с запоминанием (у каждой раскладки свой ключ): хранит сервис настроек. */
 export function useWidths<K extends string>(key: string, defaults: Record<K, number>) {
-  const [widths, setWidths] = useState<Record<K, number>>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(`layout.${key}`) ?? "null");
-      return saved && typeof saved === "object" ? { ...defaults, ...saved } : defaults;
-    } catch {
-      return defaults;
-    }
-  });
-  const set = useCallback(
-    (name: K, value: number) =>
-      setWidths((all) => {
-        const next = { ...all, [name]: value };
-        try {
-          localStorage.setItem(`layout.${key}`, JSON.stringify(next));
-        } catch {
-          /* без сохранения */
-        }
-        return next;
-      }),
-    [key],
-  );
-  return [widths, set] as const;
+  const [saved, save] = useSetting<Partial<Record<K, number>>>(`layout.${key}`, {});
+  const set = useCallback((name: K, value: number) => save((all) => ({ ...all, [name]: value })), [save]);
+  return [{ ...defaults, ...saved } as Record<K, number>, set] as const;
 }
 
 /** Граница между колонками: тянуть мышью, двойной щелчок — ширина по умолчанию. `side` — с какой

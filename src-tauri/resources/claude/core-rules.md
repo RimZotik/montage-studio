@@ -24,6 +24,13 @@ changed or what you need. No lists of steps, no track or clip ids, no tool names
 5. Export only when the user asks (`export_start`, then `export_status`).
 
 ## Token economy
+- Never touch clips one by one when they share a change. One call covers all: `timeline_apply` `editWhere`
+  (`select` by track, trackKind, kind, src, text, from/to, effect; props, effect params, add, removeEffect),
+  `effect_apply` / `tool_run` with `where`, `timeline_get` with `where`. Example, all captions bigger:
+  `{op:editWhere,select:{trackKind:captions},effect:"text-style",params:{size:80}}`.
+- A look for a whole track goes on the track: `effect_apply` with `track`, `setTrackEffect` to change it. New
+  clips get it by themselves and there is one thing to edit. Clip effects are for exceptions.
+- In `timeline_get` a repeated effect is shown once as `#N`.
 - `project_summary` first; `timeline_get` with a track or range, never everything without need.
 - Rules are already in context; do not re-read `rules/*.md` unless the user changed them this turn.
 - `render_frame`: small scale, only key frames, not after every edit.

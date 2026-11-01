@@ -474,12 +474,17 @@ fn captions(c: &Ctx<'_>, wait: Duration) -> AppResult<ToolOutcome> {
                 e.apply(&Op::DeleteClips { ids: old, ripple: false })?;
             }
         }
+        // Оформление и единая анимация — один раз на дорожку, а не копия на каждый субтитр: править
+        // его потом можно одним действием, и новые субтитры получают его сами.
+        if let Some(fx) = &style {
+            e.apply(&Op::AddTrackEffect { track: track.clone(), effect: fx.clone() })?;
+        }
+        if let [one] = looks.as_slice() {
+            e.apply(&Op::AddTrackEffect { track: track.clone(), effect: one.clone() })?;
+        }
         for (n, op) in adds.iter().enumerate() {
             for id in e.apply(op)? {
-                if let Some(fx) = &style {
-                    e.apply(&Op::AddEffect { clip: id.clone(), effect: fx.clone() })?;
-                }
-                if !looks.is_empty() {
+                if looks.len() > 1 {
                     e.apply(&Op::AddEffect { clip: id, effect: looks[n % looks.len()].clone() })?;
                 }
             }
@@ -933,6 +938,20 @@ pub fn style_apply_to_project(app: &AppHandle, id: &str, lang: &str) -> AppResul
     Ok("rules/style.md".into())
 }
 
+/// Наложить эффект библиотеки на всю дорожку одним шагом отмены.
+pub fn apply_effect_to_track(app: &AppHandle, id: &str, params: &Value, track: &str, label: &str) -> AppResult<()> {
+    let root = library::root_of(app)?;
+    library::init(&root)?;
+    let (item, _) = library::find(&root, id).ok_or_else(|| AppError::new("invalidLibrary", format!("{id} not found")))?;
+    if item.kind != "effect" {
+        return Err(AppError::new("invalidLibrary", format!("{id} is a tool: run it")));
+    }
+    let effect = library::applied(&item, params);
+    commit(app, label, |e| e.apply(&Op::AddTrackEffect { track: track.to_owned(), effect }).map(|_| ()))?;
+    library::bump(&app.state::<Db>(), id);
+    Ok(())
+}
+
 /// Наложить эффект библиотеки на клипы одним шагом отмены.
 pub fn apply_effect(app: &AppHandle, id: &str, params: &Value, clips: &[String], label: &str) -> AppResult<Vec<String>> {
     let root = library::root_of(app)?;
@@ -976,6 +995,12 @@ pub async fn sound_place(app: AppHandle, id: String, frame: u32, track: Option<S
     tauri::async_runtime::spawn_blocking(move || sound_add(&app, &id, &[frame], track.as_deref(), None, "sound").map(|v| v.join(","))).await.map_err(|e| AppError::new("internal", e.to_string()))?
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn track_effect_add(app: AppHandle, id: String, params: Json, track: String) -> AppResult<()> {
+    apply_effect_to_track(&app, &id, &params.0, &track, "effect")
+}
+
 /// Файл звука библиотеки для прослушивания: в кэше программы, проект и медиа не меняются.
 #[tauri::command]
 #[specta::specta]
@@ -984,7 +1009,7 @@ pub async fn sound_preview(app: AppHandle, id: String) -> AppResult<String> {
         let root = library::root_of(&app)?;
         let (item, _) = library::find(&root, &id).filter(|(i, _)| i.kind == "sound").ok_or_else(|| bad(format!("sound {id} not found")))?;
         let seconds = item.seconds.ok_or_else(|| bad("sound without length"))?;
-        let dir = app.path().app_cache_dir().map_err(|e| AppError::new("internal", e.to_string()))?.join("sounds");
+        let dir = crate::cache::app_dir(&app, "sounds")?;
         let out = dir.join(format!("{}-{}.wav", item.id, item.revision));
         if !out.is_file() {
             synth_to(&app, &item, seconds, &out)?;

@@ -11,7 +11,8 @@ import { useDragMedia } from "./dragMedia";
 import { EffectsColumn } from "./EffectsColumn";
 import { Inspector } from "./Inspector";
 import { Monitor } from "./Monitor";
-import { type EditTool, Timeline, type TimelineActions } from "./Timeline";
+import { useSetting } from "@/shared/settings/settings";
+import { type EditTool, Timeline, type TimelineActions, type TimelineApi } from "./Timeline";
 
 const WIDTHS = { media: 280, inspector: 300, timeline: 300 };
 const FILL = { flex: 1, minHeight: 0 };
@@ -29,9 +30,11 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
   const [zoom, setZoom] = useState(2);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [w, setW] = useWidths("edit", WIDTHS);
-  const [left, setLeft] = useState<"media" | "effects">("media");
+  const [left, setLeft] = useSetting<"media" | "effects">("edit.leftTab", "media");
   const [tool, setTool] = useState<EditTool>("select");
-  const [snapOn, setSnapOn] = useState(true);
+  const [snapOn, setSnapOn] = useSetting("timeline.snap", true);
+  const [pickedTrack, setPickedTrack] = useState<string | null>(null);
+  const timelineApi = useRef<TimelineApi | null>(null);
   const [note, setNote] = useState<string | null>(null);
   useEffect(() => {
     if (!note) return;
@@ -68,9 +71,28 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
     };
   }, []);
 
+  // Перемотка мышью дает десятки позиций в секунду, а видео успевает показать несколько: головка
+  // движется сразу, плееру уходит только последняя позиция за кадр экрана.
+  const seekWanted = useRef(0);
+  const seekQueued = useRef(0);
   const seek = useCallback((f: number) => {
-    playerRef.current?.seekTo(f);
+    seekWanted.current = f;
     setFrame(f);
+    if (seekQueued.current) return;
+    seekQueued.current = requestAnimationFrame(() => {
+      seekQueued.current = 0;
+      playerRef.current?.seekTo(seekWanted.current);
+    });
+  }, []);
+  useEffect(() => () => cancelAnimationFrame(seekQueued.current), []);
+
+  const selectClips = useCallback((ids: string[]) => {
+    setSelected(ids);
+    if (ids.length) setPickedTrack(null);
+  }, []);
+  const pickTrack = useCallback((id: string | null) => {
+    setPickedTrack(id);
+    if (id) setSelected([]);
   }, []);
 
   const apply = useCallback(
@@ -195,14 +217,15 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
         case "Escape":
           setTool("select");
           setSelected([]);
+          setPickedTrack(null);
           break;
         case "Equal":
         case "NumpadAdd":
-          setZoom((z) => Math.min(40, z * 1.25));
+          timelineApi.current?.zoomBy(1.25);
           break;
         case "Minus":
         case "NumpadSubtract":
-          setZoom((z) => Math.max(0.05, z / 1.25));
+          timelineApi.current?.zoomBy(1 / 1.25);
           break;
         default:
           return;
@@ -244,13 +267,13 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
               </button>
             ))}
           </div>
-          {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={noop} onError={onError} onImport={onImport} style={FILL} compact /> : <EffectsColumn view={view} selected={selected} frame={frame} onError={onError} style={FILL} />}
+          {left === "media" ? <MediaColumn projectPath={view.path} reloadKey={mediaKey} selected={null} onSelect={noop} onError={onError} onImport={onImport} style={FILL} compact /> : <EffectsColumn view={view} selected={selected} pickedTrack={pickedTrack} frame={frame} onError={onError} style={FILL} />}
         </div>
         <Splitter width={w.media} min={200} max={480} side="left" onChange={(v) => setW("media", v)} onReset={() => setW("media", WIDTHS.media)} />
         <Monitor view={view} total={total} playerRef={playerRef} srcOf={srcOf} frame={frame} playing={playing} />
         <Splitter width={w.inspector} min={240} max={480} side="right" onChange={(v) => setW("inspector", v)} onReset={() => setW("inspector", WIDTHS.inspector)} />
         <div style={{ width: w.inspector, display: "flex", minHeight: 0 }}>
-          <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} selectedCount={selected.length} />
+          <Inspector view={view} clip={clip} frame={frame} apply={apply} onError={onError} selectedCount={selected.length} pickedTrack={pickedTrack} />
         </div>
       </div>
       <Splitter width={w.timeline} min={160} max={640} side="right" vertical onChange={(v) => setW("timeline", v)} onReset={() => setW("timeline", WIDTHS.timeline)} />
@@ -266,7 +289,7 @@ export function EditPage({ view, onError, onImport, mediaKey, claudeBusy }: { vi
             </button>
           </div>
         )}
-        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={setSelected} apply={apply} media={media} tool={tool} onTool={setTool} snapOn={snapOn} onSnap={setSnapOn} actions={actions} onOpenEffects={openEffects} onNote={setNote} onError={onError} />
+        <Timeline view={view} frame={frame} total={total} zoom={zoom} onZoom={setZoom} onSeek={seek} selected={selected} onSelect={selectClips} apply={apply} media={media} tool={tool} onTool={setTool} snapOn={snapOn} onSnap={setSnapOn} actions={actions} onOpenEffects={openEffects} onNote={setNote} onError={onError} pickedTrack={pickedTrack} onPickTrack={pickTrack} apiRef={timelineApi} />
         {note && <div className="tlnote">{note}</div>}
       </div>
       {drag && (

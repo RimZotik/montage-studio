@@ -181,6 +181,7 @@ pub fn open(app: &AppHandle, path: &str) -> AppResult<ProjectView> {
     let path = crate::projects::canonical(path);
     let dir = PathBuf::from(&path);
     let doc = load(&dir)?;
+    crate::cache::trim_on_open(&dir);
     if let Some(chat) = app.try_state::<crate::chat::ChatState>() {
         crate::chat::shutdown(&chat);
     }

@@ -456,6 +456,8 @@ export type Item_Deserialize = {
 	/**  Звук: длительность и где слышен удар, секунд. */
 	seconds?: number | null,
 	hitAt?: number | null,
+	/**  Звук: готовый `.wav` рядом с описанием вместо синтеза. */
+	file?: string | null,
 	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
 	preview?: any,
 	/**  `studio`, `user`, `claude`. */
@@ -496,6 +498,8 @@ export type Item_Serialize = {
 	/**  Звук: длительность и где слышен удар, секунд. */
 	seconds: number | null,
 	hitAt: number | null,
+	/**  Звук: готовый `.wav` рядом с описанием вместо синтеза. */
+	file?: string | null,
 	/**  Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет. */
 	preview?: any,
 	/**  `studio`, `user`, `claude`. */

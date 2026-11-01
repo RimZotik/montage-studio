@@ -619,6 +619,16 @@ fn audio_process(c: &Ctx<'_>, item: &Item) -> AppResult<ToolOutcome> {
 
 /// Синтезировать звук в файл.
 fn synth_to(app: &AppHandle, item: &Item, seconds: f64, out: &Path) -> AppResult<()> {
+    // Готовый файл из пака: копия, синтез не нужен.
+    if let Some(name) = &item.file {
+        let root = library::root_of(app)?;
+        let (_, pack) = library::find(&root, &item.id).ok_or_else(|| bad(format!("sound {} not found", item.id)))?;
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(library::item_dir(&root, &pack, item).join(name), out)?;
+        return Ok(());
+    }
     let ffmpeg = find(app, ToolId::Ffmpeg).ok_or_else(|| AppError::new("ffmpegMissing", "ffmpeg not found"))?;
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;

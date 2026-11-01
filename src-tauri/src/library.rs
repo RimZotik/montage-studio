@@ -104,6 +104,9 @@ pub struct Item {
     pub seconds: Option<f64>,
     #[serde(default)]
     pub hit_at: Option<f64>,
+    /// Звук: готовый `.wav` рядом с описанием вместо синтеза.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
     /// Предпросмотр на карточке: `{type:"wave"|"blocks"|"image", before, after}` — данные, файлов нет.
     #[serde(default, skip_serializing_if = "Value::is_null")]
     #[specta(type = specta_typescript::Any)]
@@ -307,7 +310,11 @@ pub fn validate_item(item: &Item) -> AppResult<()> {
             }
         }
         "sound" => {
-            check_chain(item.synth.as_deref().ok_or_else(|| bad("sound needs synth"))?)?;
+            match (&item.file, &item.synth) {
+                (Some(f), _) if f.ends_with(".wav") && !f.contains('/') && !f.contains('\\') && !f.contains("..") => {}
+                (Some(_), _) => return Err(bad("sound file: a .wav next to the description")),
+                (None, s) => check_chain(s.as_deref().ok_or_else(|| bad("sound needs synth or file"))?)?,
+            }
             if !item.seconds.is_some_and(|s| s > 0.0 && s <= 60.0) {
                 return Err(bad("sound needs seconds"));
             }
@@ -381,7 +388,7 @@ pub fn fill_chain(chain: &str, params: &Value) -> AppResult<String> {
     Ok(out)
 }
 
-fn item_dir(root: &Path, pack: &str, item: &Item) -> PathBuf {
+pub fn item_dir(root: &Path, pack: &str, item: &Item) -> PathBuf {
     root.join("packs").join(pack).join(folder(&item.kind)).join(&item.id)
 }
 
@@ -856,6 +863,15 @@ mod tests {
 
     fn effect(id: &str, to: f64) -> Item {
         serde_json::from_value(json!({ "id": id, "kind": "effect", "name": "Тест", "targets": ["video"], "controls": [{ "type": "slider", "id": "to", "min": 0, "max": 2, "default": to }], "spec": { "tracks": [{ "prop": "scale", "anchor": "span", "keys": [[0, 1], [1, "$to"]] }] } })).unwrap()
+    }
+
+    #[test]
+    fn sound_file_stays_next_to_its_description() {
+        let sound = |file: &str| serde_json::from_value::<Item>(json!({ "id": "s", "kind": "sound", "name": "S", "seconds": 1.0, "file": file })).unwrap();
+        assert!(validate_item(&sound("hit.wav")).is_ok());
+        assert!(validate_item(&sound("../hit.wav")).is_err());
+        assert!(validate_item(&sound("sub/hit.wav")).is_err());
+        assert!(validate_item(&sound("hit.exe")).is_err());
     }
 
     #[test]

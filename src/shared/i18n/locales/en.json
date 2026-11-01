@@ -336,5 +336,10 @@
     },
     "claudeBusy": "Claude is working on the timeline — wait or stop",
     "safeHint": "Dashed frame — the safe zone of a vertical video: anything outside may be covered by platform buttons and captions. Keep text and key things inside."
+  },
+  "crash": {
+    "title": "The page did not open",
+    "logged": "The error is in the log — see the errors popup below.",
+    "retry": "Try again"
   }
 }

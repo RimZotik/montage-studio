@@ -8,12 +8,15 @@ import "@/shared/i18n";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app/App";
+import { installErrorLogging } from "@/app/ErrorBoundary";
 
 // В обычном браузере (разработка интерфейса) — образцы данных вместо ядра.
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
   const { installBrowserMock } = await import("@/shared/ipc/browserMock");
   installBrowserMock();
 }
+
+installErrorLogging();
 
 const root = document.getElementById("root");
 if (root) {

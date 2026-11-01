@@ -68,6 +68,17 @@ pub fn errors_recent() -> Vec<ErrorEntry> {
     RECENT.lock().map(|r| r.iter().rev().cloned().collect()).unwrap_or_default()
 }
 
+/// Ошибка интерфейса (страница упала, необработанное исключение) — в журнал и окошко ошибок.
+#[tauri::command]
+#[specta::specta]
+pub fn ui_log(level: String, message: String) {
+    if level == "error" {
+        let _ = AppError::new("ui", message);
+    } else {
+        log::info!(target: "ui", "{message}");
+    }
+}
+
 /// «Пропустить»: очистить окошко ошибок (журнал не трогается).
 #[tauri::command]
 #[specta::specta]

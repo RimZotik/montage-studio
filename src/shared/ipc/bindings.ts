@@ -65,6 +65,8 @@ export const commands = {
 	errorsRecent: () => __TAURI_INVOKE<ErrorEntry[]>("errors_recent"),
 	/**  «Пропустить»: очистить окошко ошибок (журнал не трогается). */
 	errorsClear: () => __TAURI_INVOKE<void>("errors_clear"),
+	/**  Ошибка интерфейса (страница упала, необработанное исключение) — в журнал и окошко ошибок. */
+	uiLog: (level: string, message: string) => __TAURI_INVOKE<void>("ui_log", { level, message }),
 	/**
 	 *  Отправить сообщение. `kind` — `user` или `decision` (ответ на карточку: в чате показывается
 	 *  отметкой на карточке, а не сообщением).

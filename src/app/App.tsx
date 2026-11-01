@@ -17,6 +17,7 @@ import { type AppError, type ComponentId, type ComponentProgress, type Limits, t
 import { errorText } from "@/shared/lib/format";
 import { Splitter, useWidths } from "@/shared/ui/Splitter";
 import { type Command, comboOf, findByKeys, typingTarget } from "./commands";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { ErrorsPopover } from "./ErrorsPopover";
 import { LimitsIndicator } from "./Limits";
 import { Palette } from "./Palette";
@@ -346,6 +347,7 @@ export function App() {
 
       {project ? (
         <div className="workspace">
+          <ErrorBoundary key={tab} name={tab}>
           {tab === "prepare" ? (
             <Prepare
               view={project}
@@ -361,10 +363,13 @@ export function App() {
           ) : (
             <div className="soon">{t(`soon.${tab}`)}</div>
           )}
+          </ErrorBoundary>
           {chatOpen && (
             <>
               <Splitter width={ws.chat} min={320} max={720} side="right" onChange={(v) => setWs("chat", v)} onReset={() => setWs("chat", 400)} />
-              <ChatPanel projectPath={project.path} onError={fail} width={ws.chat} />
+              <ErrorBoundary name="chat">
+                <ChatPanel projectPath={project.path} onError={fail} width={ws.chat} />
+              </ErrorBoundary>
             </>
           )}
           {dragOver && (

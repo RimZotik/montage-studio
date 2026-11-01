@@ -112,6 +112,9 @@ export function installBrowserMock() {
             clip("c8", "a3", "media", "media/sfx/hit-low.wav", null, 540, 60),
           ],
           markers: [{ frame: 540, label: "удар" }],
+          ...(location.hash === "#real"
+            ? { clips: [{ ...clip("c2", "v2", "media", "media/footage/short01_v4.mp4", null, 0, 876), props: { volume: 0.34, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } }, { ...clip("c3", "v1", "media", "media/footage/short01_v4.mp4", null, 749, 876), offset: 876, props: { volume: 0.09, opacity: 1, scale: 1, x: 0, y: 0, fadeIn: 0, fadeOut: 0 } }], markers: [] }
+            : {}),
           canUndo: false, canRedo: false, undoLabel: null, redoLabel: null,
         };
         return structuredClone(mockProject);
@@ -166,6 +169,7 @@ export function installBrowserMock() {
       if (cmd === "settings_update") return args?.value;
       // `#install` в адресе — сразу показать ход установки ffmpeg (для снимков).
       if (cmd === "system_check" && location.hash === "#install") setTimeout(() => fakeInstall("ffmpeg"), 300);
+      if (cmd === "system_check" && location.hash === "#real") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelectorAll(".tabs button")[1] as HTMLElement | undefined)?.click(), 400); }, 300);
       if (cmd === "system_check" && location.hash === "#edit") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelectorAll(".tabs button")[1] as HTMLElement | undefined)?.click(), 400); setTimeout(() => (document.querySelector(".clip.video") as HTMLElement | null)?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 })), 900); }, 300);
       if (cmd === "system_check" && location.hash === "#preview") setTimeout(() => { (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(); setTimeout(() => (document.querySelector(".mc") as HTMLElement | null)?.click(), 400); }, 300);
       if (cmd === "system_check" && location.hash === "#project") setTimeout(() => (document.querySelector(".pr .th") as HTMLButtonElement | null)?.click(), 300);

@@ -35,6 +35,7 @@ pub fn builder() -> Builder<tauri::Wry> {
         error::errors_count,
         error::errors_recent,
         error::errors_clear,
+        error::ui_log,
         chat::chat_send,
         chat::chat_stop,
         chat::chat_new_session,

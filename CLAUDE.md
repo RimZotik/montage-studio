@@ -52,7 +52,7 @@
 - Инструменты: `node scripts/dev-mcp.mjs list` — инструменты Claude студии и разработчика:
   `dev_open_project`, `dev_tab`, `dev_chat_send` (написать в чат как пользователь),
   `dev_chat_wait` (дождаться ответа и прочитать ход), `dev_screenshot` (снимок окна, путь к PNG),
-  `dev_ui_errors`. Ключ — в `%APPDATA%pp.montagestudio.desktop\mcp-dev.json` (только сборка
+  `dev_ui_errors`. Ключ — в `%APPDATA%\app.montagestudio.desktop\mcp-dev.json` (только сборка
   разработки).
 - Чат через `dev_chat_send` тратит подписку пользователя — гонять его экономно (лимиты видны во
   второй строке студии).

@@ -141,7 +141,7 @@ function CaptionClip({ clip, above }: { clip: Clip; above: Clip[] }) {
   const plate = fx.background && !/^#[0-9a-f]{6}00$/i.test(fx.background) ? fx.background : undefined;
   return (
     <AbsoluteFill style={{ justifyContent: "flex-end", alignItems: "center", paddingBottom: "34%", opacity: p.opacity * fx.opacity * fade(frame, clip), transform: `translate(${p.x + fx.x}px, ${p.y + fx.y}px) scale(${p.scale * fx.scale}) rotate(${fx.rotate}deg)`, filter: fx.filter || undefined }}>
-      <div style={{ fontFamily: fx.font ?? "Geist Sans, system-ui, sans-serif", fontWeight: fx.weight ?? 700, fontSize: fx.size ?? 64, color: fx.color ?? "#fff", textAlign: "center", whiteSpace: "pre-line", textTransform: fx.uppercase ? "uppercase" : undefined, lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate || fx.stroke === 0 ? undefined : `${fx.stroke ?? 2}px #000` }}>
+      <div style={{ fontFamily: fx.font ?? "Geist Sans, system-ui, sans-serif", fontWeight: fx.weight ?? 700, fontSize: fx.size ?? 64, color: fx.color ?? "#fff", textAlign: "center", whiteSpace: "pre-line", textTransform: fx.uppercase ? "uppercase" : undefined, lineHeight: 1.1, margin: "0 8%", padding: plate ? "6px 20px" : 0, borderRadius: 12, background: plate, textShadow: plate ? undefined : "0 3px 0 #000, 0 0 18px rgba(0,0,0,.55)", WebkitTextStroke: plate || fx.stroke === 0 ? undefined : `${fx.stroke ?? 2}px #000`, paintOrder: "stroke fill" }}>
         {clip.text}
       </div>
     </AbsoluteFill>

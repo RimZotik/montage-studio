@@ -25,6 +25,10 @@ use crate::project::write_atomic;
 
 pub const MAIN: &str = "main";
 pub const BASE: &str = "base";
+/// Пак открытого проекта (`<проект>/presets/`): приемы, которые Claude повторяет в этом ролике.
+/// Живет и переезжает вместе с проектом; удачное переносится в библиотеку (`move_item`).
+pub const PROJECT: &str = "project";
+const PROJECT_FOLDER: &str = "presets";
 const BASE_PACK: &str = include_str!("../resources/library/base-pack.json");
 /// Встроенные алгоритмы инструментов (`presets.rs`).
 pub const BUILTINS: [&str; 9] = ["beatCut", "removeSilence", "captionsFromSpeech", "normalize", "duck", "audioProcess", "cutSounds", "loopEnd", "blurBackground"];
@@ -404,8 +408,49 @@ pub fn fill_chain(chain: &str, params: &Value) -> AppResult<String> {
     Ok(out)
 }
 
+#[cfg(not(test))]
+static PROJECT_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+#[cfg(test)]
+thread_local! {
+    static PROJECT_DIR: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+fn project_dir() -> Option<PathBuf> {
+    #[cfg(not(test))]
+    return PROJECT_DIR.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+    #[cfg(test)]
+    return PROJECT_DIR.with(|d| d.borrow().clone());
+}
+
+/// Открыт проект (или закрыт — `None`): его пак появляется в библиотеке; `pack.json` создается сразу.
+pub fn set_project(dir: Option<&Path>) {
+    let presets = dir.map(|d| d.join(PROJECT_FOLDER));
+    if let Some(p) = &presets
+        && !p.join("pack.json").is_file()
+    {
+        let pack = Pack { version: 1, id: PROJECT.into(), name: json!({ "ru": "Этот проект", "en": "This project" }), description: json!({ "ru": "Приемы этого ролика", "en": "Moves of this video" }), author: "claude".into(), readonly: false, refs: vec![], pack_version: 0, order: vec![] };
+        if let Err(e) = write_json(&p.join("pack.json"), &pack) {
+            log::warn!("project pack: {}", e.message);
+        }
+    }
+    #[cfg(not(test))]
+    {
+        *PROJECT_DIR.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = presets;
+    }
+    #[cfg(test)]
+    PROJECT_DIR.with(|d| *d.borrow_mut() = presets);
+}
+
+/// Папка пака: пак проекта — в папке проекта, остальные — в библиотеке.
+fn pack_dir(root: &Path, id: &str) -> PathBuf {
+    match project_dir() {
+        Some(dir) if id == PROJECT => dir,
+        _ => root.join("packs").join(id),
+    }
+}
+
 pub fn item_dir(root: &Path, pack: &str, item: &Item) -> PathBuf {
-    root.join("packs").join(pack).join(folder(&item.kind)).join(&item.id)
+    pack_dir(root, pack).join(folder(&item.kind)).join(&item.id)
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
@@ -416,7 +461,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> AppResult<()> {
 }
 
 fn write_pack(root: &Path, pack: &Pack) -> AppResult<()> {
-    write_json(&root.join("packs").join(&pack.id).join("pack.json"), pack)
+    write_json(&pack_dir(root, &pack.id).join("pack.json"), pack)
 }
 
 /// Создать главный пак и поставить базовый (при новой версии программы — обновить).
@@ -445,15 +490,17 @@ pub fn init(root: &Path) -> AppResult<()> {
 }
 
 fn read_pack(root: &Path, id: &str) -> Option<Pack> {
-    serde_json::from_slice(&std::fs::read(root.join("packs").join(id).join("pack.json")).ok()?).ok()
+    serde_json::from_slice(&std::fs::read(pack_dir(root, id).join("pack.json")).ok()?).ok()
 }
 
-/// Все паки: главный первым, базовый вторым.
+/// Все паки: главный первым, базовый вторым, пак открытого проекта последним.
 pub fn packs(root: &Path) -> Vec<Pack> {
-    let mut all: Vec<Pack> = std::fs::read_dir(root.join("packs")).into_iter().flatten().flatten().filter_map(|e| read_pack(root, &e.file_name().to_string_lossy())).collect();
+    let mut all: Vec<Pack> = std::fs::read_dir(root.join("packs")).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|id| id != PROJECT).filter_map(|id| read_pack(root, &id)).collect();
+    all.extend(project_dir().and_then(|_| read_pack(root, PROJECT)));
     let rank = |p: &Pack| match p.id.as_str() {
         MAIN => 0,
         BASE => 1,
+        PROJECT => 3,
         _ => 2,
     };
     all.sort_by(|a, b| rank(a).cmp(&rank(b)).then(a.id.cmp(&b.id)));
@@ -465,7 +512,7 @@ pub fn items(root: &Path) -> Vec<(Item, String)> {
     let mut out = Vec::new();
     for pack in packs(root) {
         for kind in ["effect", "tool", "style", "sound", "component"] {
-            for entry in std::fs::read_dir(root.join("packs").join(&pack.id).join(folder(kind))).into_iter().flatten().flatten() {
+            for entry in std::fs::read_dir(pack_dir(root, &pack.id).join(folder(kind))).into_iter().flatten().flatten() {
                 let path = entry.path().join(file_name(kind));
                 match std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Item>(&b).ok()) {
                     Some(item) if validate_item(&item).is_ok() => out.push((item, pack.id.clone())),
@@ -532,7 +579,7 @@ fn pack_id_from(root: &Path, name: &str) -> String {
     let base = if slug.len() >= 2 && slug.len() <= 40 && !slug.contains("--") { slug } else { "pack".to_owned() };
     let mut id = base.clone();
     let mut n = 2;
-    while root.join("packs").join(&id).exists() {
+    while root.join("packs").join(&id).exists() || id == PROJECT {
         id = format!("{base}-{n}");
         n += 1;
     }
@@ -560,7 +607,7 @@ pub fn pack_rename(root: &Path, id: &str, name: &str) -> AppResult<()> {
 /// Удалить пак: его собственные элементы переходят в главный, ничего не теряется.
 pub fn pack_delete(root: &Path, id: &str) -> AppResult<()> {
     let p = read_pack(root, id).ok_or_else(|| bad(format!("pack {id} not found")))?;
-    if p.readonly || id == MAIN {
+    if p.readonly || id == MAIN || id == PROJECT {
         return Err(AppError::new("packReadonly", id.to_owned()));
     }
     for (item, owner) in items(root) {
@@ -572,7 +619,47 @@ pub fn pack_delete(root: &Path, id: &str) -> AppResult<()> {
             std::fs::rename(item_dir(root, id, &item), to)?;
         }
     }
-    std::fs::remove_dir_all(root.join("packs").join(id))?;
+    std::fs::remove_dir_all(pack_dir(root, id))?;
+    Ok(())
+}
+
+/// Перенести элемент в другой пак (из пака проекта — в библиотеку и обратно): папка элемента
+/// с файлами и историей правок переезжает целиком, ссылки на него остаются.
+pub fn move_item(root: &Path, id: &str, to: &str) -> AppResult<()> {
+    let (item, owner) = find(root, id).ok_or_else(|| bad(format!("{id} not found")))?;
+    if owner == to {
+        return Ok(());
+    }
+    for p in [&owner, &to.to_owned()] {
+        if read_pack(root, p).ok_or_else(|| bad(format!("pack {p} not found")))?.readonly {
+            return Err(AppError::new("packReadonly", p.clone()));
+        }
+    }
+    let (from, dest) = (item_dir(root, &owner, &item), item_dir(root, to, &item));
+    if dest.exists() {
+        return Err(bad(format!("{to} already has a folder {id}")));
+    }
+    // Проект и библиотека бывают на разных дисках: копия, затем удаление.
+    copy_dir(&from, &dest)?;
+    std::fs::remove_dir_all(&from)?;
+    let mut target = read_pack(root, to).ok_or_else(|| bad(format!("pack {to} not found")))?;
+    if target.refs.iter().any(|r| r == id) {
+        target.refs.retain(|r| r != id);
+        write_pack(root, &target)?;
+    }
+    Ok(())
+}
+
+fn copy_dir(from: &Path, to: &Path) -> AppResult<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            copy_dir(&path, &to.join(entry.file_name()))?;
+        } else {
+            std::fs::copy(&path, to.join(entry.file_name()))?;
+        }
+    }
     Ok(())
 }
 
@@ -881,6 +968,26 @@ mod tests {
 
     fn effect(id: &str, to: f64) -> Item {
         serde_json::from_value(json!({ "id": id, "kind": "effect", "name": "Тест", "targets": ["video"], "controls": [{ "type": "slider", "id": "to", "min": 0, "max": 2, "default": to }], "spec": { "tracks": [{ "prop": "scale", "anchor": "span", "keys": [[0, 1], [1, "$to"]] }] } })).unwrap()
+    }
+
+    #[test]
+    fn project_presets_live_in_the_project_and_move_to_the_library() {
+        let (tmp, root) = lib();
+        let project = tmp.path().join("Ролик");
+        set_project(Some(&project));
+        assert_eq!(packs(&root).last().map(|p| p.id.as_str()), Some(PROJECT), "пак проекта виден, последним");
+        save(&root, effect("glass-sweep", 1.2), Some(PROJECT)).unwrap();
+        assert!(project.join("presets/effects/glass-sweep/effect.json").is_file(), "в папке проекта, не в библиотеке");
+        assert_eq!(find(&root, "glass-sweep").map(|(_, p)| p), Some(PROJECT.to_owned()));
+        assert!(pack_delete(&root, PROJECT).is_err());
+        save(&root, effect("glass-sweep", 1.5), None).unwrap();
+        move_item(&root, "glass-sweep", MAIN).unwrap();
+        assert!(!project.join("presets/effects/glass-sweep").exists());
+        let (moved, owner) = find(&root, "glass-sweep").unwrap();
+        assert_eq!((owner.as_str(), moved.revision), (MAIN, 2), "переехал с историей правок");
+        assert!(root.join("packs/main/effects/glass-sweep/.history/1.json").is_file());
+        set_project(None);
+        assert!(packs(&root).iter().all(|p| p.id != PROJECT), "проект закрыт — пака нет");
     }
 
     #[test]

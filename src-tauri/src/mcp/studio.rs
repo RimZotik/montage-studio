@@ -28,13 +28,13 @@ pub fn list() -> Value {
         { "name": "media_import", "description": "Copy files from disk into the project media (sorted by kind).", "inputSchema": { "type": "object", "properties": { "files": { "type": "array", "items": { "type": "string" } } }, "required": ["files"] } },
         { "name": "smart_reload", "description": "Show changes in smart/ in the monitor. Call after editing a component without a timeline change.", "inputSchema": { "type": "object", "properties": {} } },
         { "name": "component_install", "description": "Install a library component set into smart/<id>/ and its files into media/assets/ (staticFile finds them by the short path).", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
-        { "name": "library_save", "description": "Create or update an effect or tool, including its control panel. New items go to `pack` (default main). The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
-        { "name": "pack_edit", "description": "Packs. action: list | create (name) | add (pack,item) | remove (pack,item) | delete (pack; its items move to main).", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "pack": { "type": "string" }, "item": { "type": "string" }, "name": { "type": "string" } }, "required": ["action"] } },
+        { "name": "library_save", "description": "Create or update an effect, tool, sound, style or component, including its control panel. New items go to `pack` (default main); pack project — a preset of this video only, stored in the project. The same id updates it and keeps history. Format: see core rules.", "inputSchema": { "type": "object", "properties": { "item": { "type": "object" }, "pack": { "type": "string" } }, "required": ["item"] } },
+        { "name": "pack_edit", "description": "Packs. action: list | create (name) | add (pack,item) | remove (pack,item) | delete (pack; its items move to main) | move (item, pack): the item itself moves, e.g. a project preset the user wants to keep goes to main or their pack.", "inputSchema": { "type": "object", "properties": { "action": { "type": "string" }, "pack": { "type": "string" }, "item": { "type": "string" }, "name": { "type": "string" } }, "required": ["action"] } },
         { "name": "effect_apply", "description": "Put a library effect on clips in one call: where (condition, as in editWhere select), clips, or the selection; track = on the whole track, future clips included. params override its defaults. One undo step.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "where": { "type": "object" }, "track": { "type": "string" }, "params": { "type": "object" } }, "required": ["id"] } },
         { "name": "tool_run", "description": "Run a library tool on clips: where (condition), clips, or the selection, else its track settings. params override its defaults. One undo step. Status pending: run again later.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "clips": { "type": "array", "items": { "type": "string" } }, "where": { "type": "object" }, "params": { "type": "object" } }, "required": ["id"] } },
         { "name": "style_apply", "description": "Put a library style (rules for how the video should be edited) into the project rules/style.md; they join your context from the next message.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] } },
         { "name": "sound_add", "description": "Put a library sound on the timeline so that its hit lands on each of frames (synthesized once into media/sfx), one call for all frames. track default: last audio track; volume 0–2.", "inputSchema": { "type": "object", "properties": { "id": { "type": "string" }, "frames": { "type": "array", "items": { "type": "integer" } }, "track": { "type": "string" }, "volume": { "type": "number" } }, "required": ["id", "frames"] } },
-        { "name": "speech_transcribe", "description": "What is said in a media file or on a clip, phrase by phrase (local model, cached). path — seconds in the file; clip — timeline frames, only what is audible. Status pending: call again.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "clip": { "type": "string" }, "language": { "type": "string" } } } },
+        { "name": "speech_transcribe", "description": "What is said in a media file or on a clip, phrase by phrase (local model, cached). path — seconds in the file; clip — timeline frames, only what is audible. words: true — one line per word with its start and end (to land cuts and hits on a syllable). Status pending: call again.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "clip": { "type": "string" }, "language": { "type": "string" }, "words": { "type": "boolean" } } } },
         { "name": "speech_find", "description": "Find words in already transcribed clips: timeline frames where they are said.", "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } },
         { "name": "audio_analyze", "description": "Loudness (LUFS, peak, range) and pauses of a file in media/ or a finished video in output/.", "inputSchema": { "type": "object", "properties": { "path": { "type": "string" }, "threshold": { "type": "number" }, "min_pause": { "type": "number" } }, "required": ["path"] } },
         { "name": "render_frame", "description": "Render one timeline frame to a JPEG (exactly as export will look) and return its path: read it with Read to see the result. Use sparingly, one frame at a time.", "inputSchema": { "type": "object", "properties": { "frame": { "type": "integer" }, "scale": { "type": "number" } }, "required": ["frame"] } },
@@ -185,6 +185,7 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
                     "add" => library::pack_link(&root, pack, item, true).map(|()| "ok".to_owned()),
                     "remove" => library::pack_link(&root, pack, item, false).map(|()| "ok".to_owned()),
                     "delete" => library::pack_delete(&root, pack).map(|()| "ok".to_owned()),
+                    "move" => library::move_item(&root, item, pack).map(|()| format!("{item} moved to {pack}")),
                     other => return Err(format!("unknown action {other}")),
                 }
                 .map_err(|e| format!("refused ({}): {}", e.code, e.message))?;
@@ -226,6 +227,18 @@ pub fn call(app: &AppHandle, name: &str, args: &Value) -> Option<Result<String, 
                 match speech::wait(app, &dir, path, language, WAIT).map_err(|e| format!("refused ({}): {}", e.code, e.message))? {
                     speech::Status::NoModel => Ok("needsSpeechModel: the speech model is not installed".into()),
                     speech::Status::Running(p) => Ok(format!("pending: {:.0}%, call again later", p * 100.0)),
+                    speech::Status::Ready(t) if args["words"].as_bool() == Some(true) => {
+                        let lines: Vec<String> = t
+                            .words
+                            .iter()
+                            .filter_map(|w| match clip {
+                                Some(c) => Some(format!("f{}-f{} {}", speech::frame_on_clip(c, w.start, fps)?, speech::frame_on_clip(c, w.end, fps)?, w.text)),
+                                None => Some(format!("{:.2}-{:.2}s {}", f64::from(w.start) / 1000.0, f64::from(w.end) / 1000.0, w.text)),
+                            })
+                            .collect();
+                        Ok(if lines.is_empty() { "no speech".into() } else { lines.join("
+") })
+                    }
                     speech::Status::Ready(t) => {
                         let lines: Vec<String> = speech::phrases(&t.words, 14, 90, 700)
                             .into_iter()

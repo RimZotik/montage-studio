@@ -264,7 +264,9 @@ pub fn import(dir: &Path, files: &[String], ffprobe: Option<&Path>) -> AppResult
             continue;
         }
         if cat == "sfx" {
-            if let Some(hint) = audio_hint(&name) {
+            // Имя файла, иначе папка, из которой он пришел (`voice/1.mp3`).
+            let folder = src.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            if let Some(hint) = audio_hint(&name).or_else(|| audio_hint(&folder)) {
                 cat = hint;
             } else if ffprobe.and_then(|fp| probe(fp, src)).and_then(|p| p.duration_s).is_some_and(|d| d >= MUSIC_FROM_S) {
                 cat = "music";
@@ -422,6 +424,18 @@ mod tests {
         assert_eq!(audio_hint("Голос дубль 2.wav"), Some("voice"));
         assert_eq!(audio_hint("phonk_mix.mp3"), Some("music"));
         assert_eq!(audio_hint("boom.wav"), None);
+    }
+
+    #[test]
+    fn audio_from_a_voice_folder_goes_to_voice() {
+        let tmp = tempfile::tempdir().unwrap();
+        let from = tmp.path().join("in").join("voice");
+        std::fs::create_dir_all(&from).unwrap();
+        std::fs::write(from.join("1.mp3"), b"x").unwrap();
+        let project = tmp.path().join("p");
+        let r = import(&project, &[from.join("1.mp3").display().to_string()], None).unwrap();
+        assert_eq!(r.imported, 1);
+        assert!(project.join("media/voice/1.mp3").is_file());
     }
 
     #[test]

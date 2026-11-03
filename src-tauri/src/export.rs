@@ -264,12 +264,20 @@ fn job(app: &AppHandle, dir: &Path, doc: &crate::project::model::Snapshot) -> Ap
     }))
 }
 
-/// Перенести служебные данные в начало файла: ролик начинает играть и загружаться сразу.
-fn fast_start(app: &AppHandle, file: &Path) -> bool {
+/// Потолок пиков общего звука: сумма голоса, музыки и звуков не перегружается (-2 дБ).
+const PEAK_LIMIT: &str = "alimiter=limit=0.794:attack=1:release=60:level=disabled";
+
+/// Доводка файла: общий ограничитель пиков на звук (картинка копируется как есть) и служебные данные
+/// в начале файла — ролик начинает играть и загружаться сразу.
+fn finish_args(audio_bitrate: &str) -> Vec<String> {
+    ["-c:v", "copy", "-af", PEAK_LIMIT, "-c:a", "aac", "-b:a", audio_bitrate, "-movflags", "+faststart"].map(str::to_owned).to_vec()
+}
+
+fn fast_start(app: &AppHandle, file: &Path, audio_bitrate: &str) -> bool {
     let Some(ffmpeg) = find(app, ToolId::Ffmpeg) else { return false };
     let tmp = file.with_extension("faststart.mp4");
     let mut c = Command::new(ffmpeg);
-    c.args(["-v", "error", "-y", "-i"]).arg(file).args(["-c", "copy", "-movflags", "+faststart"]).arg(&tmp);
+    c.args(["-v", "error", "-y", "-i"]).arg(file).args(finish_args(audio_bitrate)).arg(&tmp);
     let ok = quiet(&mut c).status().is_ok_and(|s| s.success()) && std::fs::rename(&tmp, file).is_ok();
     if !ok {
         let _ = std::fs::remove_file(&tmp);
@@ -319,6 +327,7 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
     *state.child.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(child);
     state.cancelled.store(false, std::sync::atomic::Ordering::SeqCst);
     let (app2, out2) = (app.clone(), output.clone());
+    let audio_bitrate = encoding(settings).audio;
     let project_dir = app.state::<ProjectState>().context().map(|c| c.0);
     let (child_slot, busy, cancelled) = (Arc::clone(&state.child), Arc::clone(&state.busy), Arc::clone(&state.cancelled));
     std::thread::spawn(move || {
@@ -346,7 +355,7 @@ pub fn start(app: &AppHandle, settings: &ExportSettings) -> AppResult<PathBuf> {
             emit(&app2, "cancelled", 0.0, None, None);
         } else if success && error.is_none() && out2.is_file() {
             emit(&app2, "finish", 1.0, None, None);
-            fast_start(&app2, &out2);
+            fast_start(&app2, &out2, audio_bitrate);
             if let Some(d) = &project_dir {
                 let mut j = journal(d);
                 j.files.retain(|f| Path::new(f) != out2);
@@ -507,6 +516,14 @@ pub fn export_cancel(state: State<'_, ExportState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finishing_limits_peaks_and_keeps_the_picture() {
+        let a = finish_args("256k");
+        assert!(a.windows(2).any(|w| w[0] == "-c:v" && w[1] == "copy"), "картинка не перекодируется");
+        assert!(a.iter().any(|x| x.starts_with("alimiter=limit=0.794")), "потолок -2 дБ");
+        assert!(a.windows(2).any(|w| w[0] == "-b:a" && w[1] == "256k"));
+    }
 
     #[test]
     fn quality_presets() {

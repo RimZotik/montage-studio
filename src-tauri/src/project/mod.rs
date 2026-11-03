@@ -187,11 +187,13 @@ pub fn open(app: &AppHandle, path: &str) -> AppResult<ProjectView> {
     }
     let seq = &doc.project.sequence;
     crate::projects::remember(&db, &path, &doc.project.name, (seq.width, seq.height, seq.fps))?;
+    crate::library::set_project(Some(&dir));
     let view = {
         let mut guard = state.lock();
         *guard = Some(Open { dir, doc, history: History::default() });
         guard.as_ref().map(Open::view)
     };
+    crate::library::changed(app);
     log::info!("project loaded: {path}");
     emit(app, view.clone());
     view.ok_or_else(|| AppError::new("internal", "project vanished"))
@@ -204,6 +206,8 @@ pub fn project_close(app: AppHandle, state: State<'_, ProjectState>) {
         crate::chat::shutdown(&chat);
     }
     *state.lock() = None;
+    crate::library::set_project(None);
+    crate::library::changed(&app);
     emit(&app, None);
 }
 

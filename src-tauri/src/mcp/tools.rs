@@ -95,7 +95,9 @@ fn clip_line(c: &Clip, legend: &mut Legend) -> String {
     for fx in &c.effects {
         extra.push(format!("{}={}", fx.id, legend.mark(fx)));
     }
-    format!("{} {} {:?} {} start={} dur={} off={} {}", c.id, c.track, c.kind, what, c.start, c.duration, c.offset, extra.join(" ")).to_lowercase().trim_end().to_owned()
+    // Строчными — только вид клипа: путь и текст остаются как есть (их копируют в следующие правки).
+    let kind = format!("{:?}", c.kind).to_lowercase();
+    format!("{} {} {kind} {} start={} dur={} off={} {}", c.id, c.track, what, c.start, c.duration, c.offset, extra.join(" ")).trim_end().to_owned()
 }
 
 pub fn call<R: tauri::Runtime>(app: &AppHandle<R>, name: &str, args: &Value) -> Result<String, String> {

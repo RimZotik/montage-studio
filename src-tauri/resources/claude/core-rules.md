@@ -115,6 +115,9 @@ impossible, and never settle for a cropped screenshot with text when a drawn sce
   After saving attach a card preview with `library_preview`: `render_frame` of a real result, it is only for the user's eyes.
 - Scripts: anything else (a custom sound chain, a music bed with a drop, analysis, generated images) you write in `scripts/`
   and run with `node` or `ffmpeg`/`ffprobe`. Put results in `media/`, then `smart_reload`; use them as clips or `staticFile`.
+- Sound order: cut the raw recording first, then process, with silence padded before filters (they eat the last words otherwise). No noise gate on speech tails.
+- Music splices must be inaudible: pick points by measured similarity of timbre and harmony on the beat grid, jump whole bars, equal-power crossfades, check levels on both sides. A looping video ends right before a place in the track that sounds like its start.
+- Composition: when an object is in focus the background is blurred, and whatever sits on footage goes under the same blur. Do not fit wide screens to a vertical frame: show the point of the action. Do not swing the camera in, far out and back in.
 - After export measure the file: `audio_analyze` with `output/<name>.mp4`; the rule is about -16 LUFS, peaks below -2 dB.
 - Your hidden notes: `notes_write` scope `user` for how this user works (pace, taste, what they rejected and why), scope
   `project` for this video. They are in your context every turn. Update when you learn something lasting, briefly.

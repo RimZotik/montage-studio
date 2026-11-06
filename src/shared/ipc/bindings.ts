@@ -765,6 +765,11 @@ export type Settings = {
 	language?: string,
 	/**  Папка новых проектов по умолчанию. */
 	projectsDir?: string | null,
+	/**
+	 *  Папка временных файлов рендера (движок копирует туда медиа ролика на время сборки); нет —
+	 *  временная папка системы. Файлы задания удаляются после рендера (`docs/storage.md`).
+	 */
+	tempDir?: string | null,
 	/**  Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`. */
 	claudeModel?: string,
 	/**

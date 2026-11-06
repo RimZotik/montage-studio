@@ -168,15 +168,42 @@ fn bundle_dir(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(dir)
 }
 
-/// Запустить `run.mjs` с заданием; строки его вывода — JSON.
+/// Временные файлы задания старше этого убираются при следующем запуске (рендер прервали или
+/// процесс завершили принудительно — сам он их не убрал).
+const STALE_TEMP: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+
+/// Папка временных файлов рендера: из настроек или во временной папке системы.
+pub fn temp_root(app: &AppHandle) -> PathBuf {
+    let chosen = app.try_state::<crate::settings::SettingsState>().and_then(|s| s.get().temp_dir).filter(|d| !d.trim().is_empty());
+    chosen.map_or_else(|| std::env::temp_dir().join("montage-studio"), PathBuf::from).join("render-temp")
+}
+
+/// Убрать папки заданий, которые остались от прошлых запусков.
+fn sweep_temp(root: &Path) {
+    for e in std::fs::read_dir(root).into_iter().flatten().flatten() {
+        let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > STALE_TEMP);
+        if old && e.file_name().to_string_lossy().starts_with("job-") {
+            let _ = std::fs::remove_dir_all(e.path());
+        }
+    }
+}
+
+/// Запустить `run.mjs` с заданием; строки его вывода — JSON. Временные файлы движка — в своей папке
+/// задания (`TEMP`/`TMP` процесса); `run.mjs` удаляет ее по окончании.
 fn spawn_runner(app: &AppHandle, job: &Value) -> AppResult<Child> {
     let node = find(app, ToolId::Node).ok_or_else(|| AppError::new("nodeMissing", "node not found"))?;
     let dir = engine_dir(app)?;
     std::fs::write(dir.join("run.mjs"), RUNNER)?;
-    let job_file = dir.join(format!("job-{}.json", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis())));
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    let job_file = dir.join(format!("job-{stamp}.json"));
     std::fs::write(&job_file, job.to_string())?;
+    let root = temp_root(app);
+    sweep_temp(&root);
+    let temp = root.join(format!("job-{stamp}"));
+    std::fs::create_dir_all(&temp)?;
     let mut c = Command::new(node);
     c.current_dir(&dir).arg("run.mjs").arg(&job_file).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    c.env("TEMP", &temp).env("TMP", &temp).env("TMPDIR", &temp).env("STUDIO_JOB_TEMP", &temp);
     quiet(&mut c).spawn().map_err(|e| AppError::new("renderStart", e.to_string()))
 }
 

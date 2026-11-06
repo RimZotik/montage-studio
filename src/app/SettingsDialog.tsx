@@ -25,6 +25,10 @@ export function SettingsDialog({ settings, onSave, onClose, onError }: { setting
     const dir = await openDialog({ directory: true, defaultPath: settings.projectsDir ?? undefined });
     if (typeof dir === "string") onSave({ ...settings, projectsDir: dir });
   };
+  const chooseTemp = async () => {
+    const dir = await openDialog({ directory: true, defaultPath: settings.tempDir ?? undefined });
+    if (typeof dir === "string") onSave({ ...settings, tempDir: dir });
+  };
 
   return (
     <div className="overlay" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -67,6 +71,20 @@ export function SettingsDialog({ settings, onSave, onClose, onError }: { setting
               <button className="iconbtn" title={t("export.folderChoose")} onClick={() => void chooseDir()}>
                 <FolderOpen size={14} strokeWidth={1.75} />
               </button>
+            </div>
+          </div>
+          <div className="setrow">
+            <span>{t("settings.tempDir")}</span>
+            <div className="setpath">
+              <span title={settings.tempDir ?? t("settings.tempDirHint")}>{settings.tempDir ?? t("settings.tempDirDefault")}</span>
+              <button className="iconbtn" title={t("export.folderChoose")} onClick={() => void chooseTemp()}>
+                <FolderOpen size={14} strokeWidth={1.75} />
+              </button>
+              {settings.tempDir && (
+                <button className="iconbtn" title={t("settings.tempDirReset")} onClick={() => onSave({ ...settings, tempDir: null })}>
+                  <X size={14} strokeWidth={1.75} />
+                </button>
+              )}
             </div>
           </div>
           <label className="setrow check">

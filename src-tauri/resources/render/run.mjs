@@ -9,6 +9,19 @@ import { rmSync } from "node:fs";
 import { ensureBrowser, renderMedia, renderStill, selectComposition } from "@remotion/renderer";
 
 const say = (o) => console.log(JSON.stringify(o));
+
+// Временные файлы движка (копии медиа) — в папке задания, которую дало ядро (`STUDIO_JOB_TEMP`);
+// при любом выходе она удаляется, иначе копии копятся после каждого рендера.
+const jobTemp = process.env.STUDIO_JOB_TEMP;
+process.on("exit", () => {
+  if (jobTemp && /[\\/]job-\d+$/.test(jobTemp)) {
+    try {
+      rmSync(jobTemp, { recursive: true, force: true });
+    } catch {
+      // Файл еще занят — уберет ядро при следующем запуске (папки старше 6 часов).
+    }
+  }
+});
 const jobFile = process.argv[2];
 const job = JSON.parse(readFileSync(jobFile, "utf8"));
 rmSync(jobFile, { force: true });

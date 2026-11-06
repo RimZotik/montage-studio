@@ -8,7 +8,7 @@ const now = Math.floor(Date.now() / 1000);
 const day = 86400;
 
 const DATA: Record<string, unknown> = {
-  settings_get: { version: 1, language: "", projectsDir: "D:\\Видео\\Проекты" },
+  settings_get: { version: 1, language: "", projectsDir: "D:\\Видео\\Проекты", tempDir: null },
   settings_update: null,
   settings_set_ui: null,
   cache_usage: [],

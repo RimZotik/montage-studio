@@ -20,6 +20,9 @@ pub struct Settings {
     pub language: String,
     /// Папка новых проектов по умолчанию.
     pub projects_dir: Option<String>,
+    /// Папка временных файлов рендера (движок копирует туда медиа ролика на время сборки); нет —
+    /// временная папка системы. Файлы задания удаляются после рендера (`docs/storage.md`).
+    pub temp_dir: Option<String>,
     /// Модель чата Claude: `sonnet` (по умолчанию — быстро и дешевле), `opus`, `haiku`.
     #[serde(default = "sonnet")]
     pub claude_model: String,
@@ -37,7 +40,7 @@ fn sonnet() -> String {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { version: VERSION, language: String::new(), projects_dir: None, claude_model: sonnet(), ui: serde_json::Map::new(), trusted_code: vec![] }
+        Self { version: VERSION, language: String::new(), projects_dir: None, temp_dir: None, claude_model: sonnet(), ui: serde_json::Map::new(), trusted_code: vec![] }
     }
 }
 
@@ -119,6 +122,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"language":"en","unknown":1}"#).unwrap();
         assert_eq!(s.language, "en");
         assert_eq!(s.projects_dir, None);
+        assert_eq!(s.temp_dir, None);
     }
 
     #[test]

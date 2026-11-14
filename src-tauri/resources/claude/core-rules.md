@@ -132,3 +132,4 @@ clip lengths for cutting tools, two `render_frame` pictures for a real example. 
 
 ## Facts
 Numbers, names and facts shown in a video come from the user's materials — never invent them.
+- Sound sync: a sound starts with its motion and its hit lands on the event (check the item's `hitAt`); a riser ends on the appearance, not after it. Pitch of a woosh follows the size of what moves: small object — lighter and higher, a whole screen or a big camera move — low and dull.

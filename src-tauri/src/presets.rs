@@ -671,11 +671,12 @@ pub fn sound_add(app: &AppHandle, id: &str, frames: &[u32], track: Option<&str>,
     commit(app, label, |e| {
         for frame in frames {
             let start = frame.saturating_sub(hit);
-            // Верхний клип заменяет нижний, поэтому звук не ложится поверх музыки: своя свободная
-            // дорожка, при нужде новая.
+            // Верхний клип заменяет нижний, поэтому звук не ложится поверх музыки и других звуков:
+            // указанная дорожка — если она свободна на этом участке, иначе своя свободная, при нужде новая.
+            let busy = |t: &str| e.clips.iter().any(|c| c.track == t && c.start < start + length && c.end() > start);
             let chosen = match track {
-                Some(t) => t.to_owned(),
-                None => match free_audio_track(e.tracks, e.clips, start, start + length) {
+                Some(t) if !busy(t) => t.to_owned(),
+                _ => match free_audio_track(e.tracks, e.clips, start, start + length) {
                     Some(t) => t,
                     None => e.apply(&Op::AddTrack { kind: TrackKind::Audio })?.pop().ok_or_else(|| bad("no track"))?,
                 },
